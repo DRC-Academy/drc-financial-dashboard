@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
+import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -72,6 +73,12 @@ export default function ResumenPage() {
   } else if (roiMeta !== null) {
     mejorCanal = "Meta Ads";
   }
+
+  const ingresosMrrSeries = kpi.months.map((month) => ({
+    month,
+    ingresos_netos: kpi.data[month]?.["ingresos_netos"] ?? null,
+    MRR: kpi.data[month]?.["MRR"] ?? null,
+  }));
 
   return (
     <>
@@ -156,6 +163,20 @@ export default function ResumenPage() {
               mom={getMoM(kpi, "ROI_marketing")}
             />
           </div>
+
+          <Panel
+            title="Ingresos netos y MRR en el tiempo"
+            description="Evolución conjunta sobre la misma línea temporal."
+          >
+            <MultiTrendChart
+              data={ingresosMrrSeries}
+              series={[
+                { key: "ingresos_netos", label: "Ingresos netos", color: "#1e9e3a" },
+                { key: "MRR", label: "MRR", color: "#ffc400" },
+              ]}
+              valueFormatter={(v) => formatCurrency(v)}
+            />
+          </Panel>
 
           <Panel
             title="Oportunidad del mes"

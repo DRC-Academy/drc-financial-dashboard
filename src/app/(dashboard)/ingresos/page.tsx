@@ -55,11 +55,18 @@ export default function IngresosPage() {
   const ingresosNuevos = getLatest(kpi, "ingresos_nuevos");
   const ingresosAcumulados = getLatest(kpi, "ingresos_acumulados");
   const stripeFeePct = getLatest(kpi, "%_stripe_fee");
+  const importeRefunds = getLatest(kpi, "importe_refunds");
+  const refundsNum = getLatest(kpi, "refunds_num");
   const pedidos = getLatest(kpi, "pedidos");
   const aov = getLatest(kpi, "AOV");
 
   const ingresosSeries = getSeries(kpi, "ingresos_netos");
   const acumuladosSeries = getSeries(kpi, "ingresos_acumulados");
+  // stripe_fee viene en negativo (es un costo): mostramos la magnitud del fee.
+  const stripeFeeSeries = getSeries(kpi, "stripe_fee").map((p) => ({
+    month: p.month,
+    value: p.value === null ? null : Math.abs(p.value),
+  }));
 
   const nuevosVsTotal = months.map((month) => ({
     month,
@@ -136,6 +143,18 @@ export default function IngresosPage() {
               momIsGoodWhenPositive={false}
             />
             <KpiCard
+              label="Importe refunds"
+              value={formatCurrency(importeRefunds)}
+              mom={getMoM(kpi, "importe_refunds")}
+              momIsGoodWhenPositive={false}
+            />
+            <KpiCard
+              label="Nº refunds"
+              value={formatNumber(refundsNum)}
+              mom={getMoM(kpi, "refunds_num")}
+              momIsGoodWhenPositive={false}
+            />
+            <KpiCard
               label="Pedidos"
               value={formatNumber(pedidos)}
               mom={getMoM(kpi, "pedidos")}
@@ -184,13 +203,25 @@ export default function IngresosPage() {
             />
           </Panel>
 
-          <Panel title="Ingresos acumulados">
-            <TrendChart
-              data={acumuladosSeries}
-              color="#143a24"
-              valueFormatter={(v) => formatCurrency(v)}
-            />
-          </Panel>
+          <div className="grid lg:grid-cols-2 gap-4">
+            <Panel title="Ingresos acumulados">
+              <TrendChart
+                data={acumuladosSeries}
+                color="#143a24"
+                valueFormatter={(v) => formatCurrency(v)}
+              />
+            </Panel>
+            <Panel
+              title="Fee de Stripe en el tiempo"
+              description="Comisión de Stripe por mes (magnitud del costo)"
+            >
+              <TrendChart
+                data={stripeFeeSeries}
+                color="#d6483c"
+                valueFormatter={(v) => formatCurrency(v)}
+              />
+            </Panel>
+          </div>
         </div>
       )}
     </>

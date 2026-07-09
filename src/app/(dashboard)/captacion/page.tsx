@@ -8,6 +8,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
 import { TrendChart } from "@/components/ui/TrendChart";
 import { BarComparison } from "@/components/ui/BarComparison";
+import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { FunnelSteps } from "@/components/ui/FunnelSteps";
 import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -66,6 +67,12 @@ export default function CaptacionPage() {
     month,
     ROI_google: getRoiCanal(kpi, month, "google"),
     ROI_meta: getRoiCanal(kpi, month, "meta"),
+  }));
+
+  const leadsCanalSeries = months.map((month) => ({
+    month,
+    leads_ads_google: kpi.data[month]?.["leads_ads_google"] ?? null,
+    leads_ads_meta: kpi.data[month]?.["leads_ads_meta"] ?? null,
   }));
 
   const leadsGoogle = getLatest(kpi, "leads_ads_google");
@@ -173,6 +180,20 @@ export default function CaptacionPage() {
                 { key: "ROI_meta", label: "Meta", color: "#ffc400" },
               ]}
               valueFormatter={(v) => formatPercent(v)}
+            />
+          </Panel>
+
+          <Panel
+            title="Leads por canal en el tiempo"
+            description="Volumen de leads de Google Ads vs Meta Ads mes a mes"
+          >
+            <MultiTrendChart
+              data={leadsCanalSeries}
+              series={[
+                { key: "leads_ads_google", label: "Google", color: "#1e9e3a" },
+                { key: "leads_ads_meta", label: "Meta", color: "#ffc400" },
+              ]}
+              valueFormatter={(v) => formatNumber(v)}
             />
           </Panel>
 

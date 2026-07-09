@@ -7,6 +7,7 @@ import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
 import { TrendChart } from "@/components/ui/TrendChart";
+import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { CohortHeatmap } from "@/components/ui/CohortHeatmap";
 import { RankedBars } from "@/components/ui/RankedBars";
 import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
@@ -101,6 +102,17 @@ export default function RetencionPage() {
 
   const cuponRows = cupones.data ?? [];
 
+  // clientes_perdidos se guarda en negativo: lo mostramos en magnitud para poder
+  // compararlo contra clientes_nuevos y leer el balance neto mes a mes.
+  const nuevosVsPerdidos = kpi.months.map((month) => {
+    const perdidos = kpi.data[month]?.["clientes_perdidos"] ?? null;
+    return {
+      month,
+      clientes_nuevos: kpi.data[month]?.["clientes_nuevos"] ?? null,
+      clientes_perdidos: perdidos === null ? null : Math.abs(perdidos),
+    };
+  });
+
   return (
     <>
       <PageHeader
@@ -166,6 +178,20 @@ export default function RetencionPage() {
             description="Retención por cohorte a lo largo de los meses de vida"
           >
             <CohortHeatmap data={cohortesFiltradas} />
+          </Panel>
+
+          <Panel
+            title="Clientes nuevos vs. perdidos"
+            description="Altas y bajas mes a mes para leer el balance neto de la base."
+          >
+            <MultiTrendChart
+              data={nuevosVsPerdidos}
+              series={[
+                { key: "clientes_nuevos", label: "Nuevos", color: "#1e9e3a" },
+                { key: "clientes_perdidos", label: "Perdidos", color: "#d6483c" },
+              ]}
+              valueFormatter={(v) => formatNumber(v)}
+            />
           </Panel>
 
           <div className="grid lg:grid-cols-2 gap-4">

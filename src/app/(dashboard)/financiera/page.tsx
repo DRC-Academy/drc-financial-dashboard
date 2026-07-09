@@ -7,6 +7,7 @@ import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
 import { TrendChart } from "@/components/ui/TrendChart";
+import { DualAxisChart } from "@/components/ui/DualAxisChart";
 import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -61,6 +62,12 @@ export default function FinancieraPage() {
 
   const ingresosAcumSeries = getSeries(kpi, "ingresos_acumulados");
   const clientesAcumSeries = getSeries(kpi, "clientes_acumulados");
+
+  const acumComparado = kpi.months.map((month) => ({
+    month,
+    left: kpi.data[month]?.["ingresos_acumulados"] ?? null,
+    right: kpi.data[month]?.["clientes_acumulados"] ?? null,
+  }));
 
   const gastosData = gastos.data;
   const gastosTotal = gastosData?.categorias.reduce((s, c) => s + c.monto, 0) ?? 0;
@@ -132,6 +139,25 @@ export default function FinancieraPage() {
               <TrendChart data={clientesAcumSeries} color="#143a24" />
             </Panel>
           </div>
+
+          <Panel
+            title="Ingresos vs. clientes acumulados"
+            description="Relación entre el crecimiento de la base de clientes y los ingresos (ejes duales)."
+          >
+            <DualAxisChart
+              data={acumComparado}
+              left={{
+                label: "Ingresos acumulados",
+                color: "#1e9e3a",
+                valueFormatter: (v) => formatCurrency(v),
+              }}
+              right={{
+                label: "Clientes acumulados",
+                color: "#143a24",
+                valueFormatter: (v) => formatNumber(v),
+              }}
+            />
+          </Panel>
 
           <Panel
             title="Estructura de gastos"
