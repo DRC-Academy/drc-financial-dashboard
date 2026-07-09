@@ -63,11 +63,46 @@ Copiá `.env.local.example` a `.env.local` y completá:
 ```
 GOOGLE_SHEET_ID=1AbC...XYZ            # el ID de la URL del Sheet
 GOOGLE_SERVICE_ACCOUNT_EMAIL=drc-dashboard-reader@tu-proyecto.iam.gserviceaccount.com
+```
+
+Para la private key tenés **dos opciones** (elegí una):
+
+### Opción A — `GOOGLE_PRIVATE_KEY_B64` (recomendada)
+
+La private key codificada en **base64**. Es la opción recomendada, sobre todo
+para Vercel: al pegar la clave cruda en un panel web se corrompen los `\n` y las
+comillas, lo que provoca el error
+`error:1E08010C:DECODER routines::unsupported / ERR_OSSL_UNSUPPORTED`. El base64
+es una sola línea sin caracteres especiales, así que no se rompe al pegarlo.
+
+Generala a partir del valor `private_key` del JSON de la Service Account:
+
+```bash
+# Linux/macOS
+base64 -w0 private_key.pem
+```
+
+```powershell
+# Windows PowerShell (el valor incluye los saltos de línea reales de la clave)
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($privateKey))
+```
+
+```
+GOOGLE_PRIVATE_KEY_B64=LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t...
+```
+
+### Opción B — `GOOGLE_PRIVATE_KEY` (cruda)
+
+La private key tal cual viene en el JSON, con los `\n` literales incluidos y
+entre comillas dobles:
+
+```
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEv...\n-----END PRIVATE KEY-----\n"
 ```
 
-**Importante sobre `GOOGLE_PRIVATE_KEY`:** copiá el valor tal cual viene en
-el JSON (con los `\n` literales incluidos, entre comillas dobles).
+Si definís **ambas**, `GOOGLE_PRIVATE_KEY_B64` tiene prioridad. El código
+(`src/lib/sheetsClient.ts`) desescapa los `\n` y saca comillas envolventes si
+quedaron pegadas, pero en paneles web como Vercel conviene usar la Opción A.
 
 ## 6. Correr en local
 
