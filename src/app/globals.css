@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root {
+  /* Marca DRC */
+  --drc-green: #1e9e3a;
+  --drc-green-deep: #0f2a1b;
+  --drc-green-deep-2: #143a24;
+  --drc-yellow: #ffc400;
+  --drc-red: #d6483c;
+  --drc-bg: #f7f7f5;
+  --drc-ink: #14231a;
+  --drc-ink-soft: #4b5d53;
+  --drc-card: #ffffff;
+  --drc-line: #e4e4df;
+
+  --background: var(--drc-bg);
+  --foreground: var(--drc-ink);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-drc-green: var(--drc-green);
+  --color-drc-green-deep: var(--drc-green-deep);
+  --color-drc-yellow: var(--drc-yellow);
+  --color-drc-red: var(--drc-red);
+  --color-drc-bg: var(--drc-bg);
+  --color-drc-ink: var(--drc-ink);
+  --color-drc-ink-soft: var(--drc-ink-soft);
+  --color-drc-card: var(--drc-card);
+  --color-drc-line: var(--drc-line);
+  --font-sans: var(--font-radio-canada);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-radio-canada), Arial, Helvetica, sans-serif;
+}
+
+.tabular {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+::selection {
+  background: var(--drc-yellow);
+  color: var(--drc-ink);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--drc-line);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c9c9c1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
