@@ -9,8 +9,16 @@ import { Panel } from "@/components/ui/Panel";
 import { TrendChart } from "@/components/ui/TrendChart";
 import { CohortHeatmap } from "@/components/ui/CohortHeatmap";
 import { RankedBars } from "@/components/ui/RankedBars";
-import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
+import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
+import {
+  filterKpi,
+  filterMonths,
+  monthLabelToYYYYMM,
+  monthsBounds,
+  DEFAULT_FILTER,
+  type DateFilter,
+} from "@/lib/dateFilter";
 import {
   getLatest,
   getLatestAbs,
@@ -37,10 +45,19 @@ export default function RetencionPage() {
     60_000
   );
   const cupones = useLiveData<CuponRow[]>("/api/relaciones?tipo=cupones", 60_000);
-  const [range, setRange] = useState(6);
+  const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
 
-  const kpi = data ?? { months: [], keys: [], data: {} };
-  const hasAnyData = kpi.months.length > 0;
+  const kpiAll = data ?? { months: [], keys: [], data: {} };
+  const hasAnyData = kpiAll.months.length > 0;
+
+  const visibleMonths = useMemo(
+    () => filterMonths(kpiAll.months, filter),
+    [kpiAll, filter]
+  );
+  const kpi = useMemo(
+    () => filterKpi(kpiAll, visibleMonths),
+    [kpiAll, visibleMonths]
+  );
 
   const clientesActivos = getLatest(kpi, "clientes_activos");
   const clientesNuevos = getLatest(kpi, "clientes_nuevos");
@@ -51,7 +68,26 @@ export default function RetencionPage() {
   const ltvChurn = getLatest(kpi, "LTV_churn");
   const permanencia = getLatest(kpi, "permanencia");
 
-  const ltvCacSeries = applyRange(getLtvCacSeries(kpi), range);
+  const ltvCacSeries = getLtvCacSeries(kpi);
+
+  // El filtro global también acota qué cohortes se muestran en el heatmap:
+  // sólo las cohortes cuyo mes de inicio cae dentro de la ventana visible.
+  const cohortesFiltradas = useMemo(() => {
+    const cd = cohortes.data ?? { cohorts: [], monthsOfLife: [] };
+    // "Todo" (quick con 0): sin recorte de cohortes.
+    if (filter.kind === "quick" && (!filter.months || filter.months <= 0)) {
+      return cd;
+    }
+    const { min, max } = monthsBounds(visibleMonths);
+    const cohorts = cd.cohorts.filter((c) => {
+      const ym = monthLabelToYYYYMM(c.cohort);
+      if (ym === null) return true;
+      if (min && ym < min) return false;
+      if (max && ym > max) return false;
+      return true;
+    });
+    return { cohorts, monthsOfLife: cd.monthsOfLife };
+  }, [cohortes.data, filter, visibleMonths]);
 
   const motivos = useMemo(() => {
     const rows = cancelaciones.data ?? [];
@@ -72,6 +108,15 @@ export default function RetencionPage() {
         title="Quién se queda, quién se va, y por qué"
         description="Cohortes, motivos de cancelación e impacto de cupones de retención."
         right={<LiveIndicator fetchedAt={fetchedAt} error={error} />}
+        filter={
+          hasAnyData ? (
+            <DateRangeFilter
+              months={kpiAll.months}
+              filter={filter}
+              onChange={setFilter}
+            />
+          ) : undefined
+        }
       />
 
       {loading && !hasAnyData && (
@@ -120,17 +165,14 @@ export default function RetencionPage() {
             title="Cohortes de clientes"
             description="Retención por cohorte a lo largo de los meses de vida"
           >
-            <CohortHeatmap data={cohortes.data ?? { cohorts: [], monthsOfLife: [] }} />
+            <CohortHeatmap data={cohortesFiltradas} />
           </Panel>
 
           <div className="grid lg:grid-cols-2 gap-4">
             <Panel title="Motivos de cancelación" description="Conteo por motivo declarado">
               <RankedBars items={motivos} color="#d6483c" />
             </Panel>
-            <Panel
-              title="LTV : CAC en el tiempo"
-              action={<RangeFilter value={range} onChange={setRange} />}
-            >
+            <Panel title="LTV : CAC en el tiempo">
               <TrendChart
                 data={ltvCacSeries}
                 color="#1e9e3a"

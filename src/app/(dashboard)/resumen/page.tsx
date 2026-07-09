@@ -1,11 +1,19 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
+import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
+import {
+  filterKpi,
+  filterMonths,
+  DEFAULT_FILTER,
+  type DateFilter,
+} from "@/lib/dateFilter";
 import {
   getLatest,
   getMoM,
@@ -25,8 +33,18 @@ export default function ResumenPage() {
     60_000
   );
 
-  const kpi = data ?? { months: [], keys: [], data: {} };
-  const hasAnyData = kpi.months.length > 0;
+  const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
+  const kpiAll = data ?? { months: [], keys: [], data: {} };
+  const hasAnyData = kpiAll.months.length > 0;
+
+  const visibleMonths = useMemo(
+    () => filterMonths(kpiAll.months, filter),
+    [kpiAll, filter]
+  );
+  const kpi = useMemo(
+    () => filterKpi(kpiAll, visibleMonths),
+    [kpiAll, visibleMonths]
+  );
 
   const ingresos = getLatest(kpi, "ingresos_netos");
   const mrr = getLatest(kpi, "MRR");
@@ -62,6 +80,15 @@ export default function ResumenPage() {
         title="Cómo está el negocio, de un vistazo"
         description="Últimos valores disponibles en el Sheet, con variación mes a mes y semáforo contra objetivo."
         right={<LiveIndicator fetchedAt={fetchedAt} error={error} />}
+        filter={
+          hasAnyData ? (
+            <DateRangeFilter
+              months={kpiAll.months}
+              filter={filter}
+              onChange={setFilter}
+            />
+          ) : undefined
+        }
       />
 
       {loading && !hasAnyData && (

@@ -1,5 +1,6 @@
 import { readSheetValues } from "./sheetsClient";
 import { cached } from "./cache";
+import { formatSheetMonth } from "./kpiHelpers";
 import type { DBKpiData, MetricValue, MonthRecord } from "@/types/kpi";
 
 // Los helpers puros (client-safe) viven en kpiHelpers.ts para que las
@@ -43,7 +44,9 @@ export async function readDBKPI(): Promise<DBKpiData> {
     const data: Record<string, MonthRecord> = {};
 
     for (const row of bodyRows) {
-      const month = String(row[0] ?? "").trim();
+      // La col. A puede venir como texto ("ago-25") o como serial de fecha de
+      // Sheets (ej. 46204); normalizamos ambos a "mmm-yy" para labels y filtros.
+      const month = formatSheetMonth(row[0]);
       if (!month) continue;
 
       const record: MonthRecord = {};

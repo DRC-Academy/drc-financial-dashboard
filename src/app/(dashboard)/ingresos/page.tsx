@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
@@ -9,8 +9,14 @@ import { Panel } from "@/components/ui/Panel";
 import { TrendChart } from "@/components/ui/TrendChart";
 import { BarComparison } from "@/components/ui/BarComparison";
 import { StackedBarChart } from "@/components/ui/StackedBarChart";
-import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
+import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
+import {
+  filterKpi,
+  filterMonths,
+  DEFAULT_FILTER,
+  type DateFilter,
+} from "@/lib/dateFilter";
 import {
   getLatest,
   getMoM,
@@ -28,11 +34,20 @@ export default function IngresosPage() {
     60_000
   );
   const producto = useLiveData<ProductoKpiData>("/api/producto-kpi", 60_000);
-  const [range, setRange] = useState(6);
+  const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
 
-  const kpi = data ?? { months: [], keys: [], data: {} };
-  const hasAnyData = kpi.months.length > 0;
-  const months = applyRange(kpi.months, range);
+  const kpiAll = data ?? { months: [], keys: [], data: {} };
+  const hasAnyData = kpiAll.months.length > 0;
+
+  const visibleMonths = useMemo(
+    () => filterMonths(kpiAll.months, filter),
+    [kpiAll, filter]
+  );
+  const kpi = useMemo(
+    () => filterKpi(kpiAll, visibleMonths),
+    [kpiAll, visibleMonths]
+  );
+  const months = kpi.months;
 
   const ingresosNetos = getLatest(kpi, "ingresos_netos");
   const ingresosB2C = getLatest(kpi, "ingresos_B2C_netos");
@@ -43,8 +58,8 @@ export default function IngresosPage() {
   const pedidos = getLatest(kpi, "pedidos");
   const aov = getLatest(kpi, "AOV");
 
-  const ingresosSeries = applyRange(getSeries(kpi, "ingresos_netos"), range);
-  const acumuladosSeries = applyRange(getSeries(kpi, "ingresos_acumulados"), range);
+  const ingresosSeries = getSeries(kpi, "ingresos_netos");
+  const acumuladosSeries = getSeries(kpi, "ingresos_acumulados");
 
   const nuevosVsTotal = months.map((month) => ({
     month,
@@ -59,7 +74,7 @@ export default function IngresosPage() {
   }));
 
   const productoData = producto.data ?? { months: [], productos: [], data: {} };
-  const productoMonths = applyRange(productoData.months, range);
+  const productoMonths = filterMonths(productoData.months, filter);
   const productoRows = productoMonths.map((month) => ({
     month,
     ...(productoData.data[month] ?? {}),
@@ -72,6 +87,15 @@ export default function IngresosPage() {
         title="Cuánto entra, y de dónde"
         description="Ingresos netos, mix de producto y composición nuevos vs. recurrentes."
         right={<LiveIndicator fetchedAt={fetchedAt} error={error} />}
+        filter={
+          hasAnyData ? (
+            <DateRangeFilter
+              months={kpiAll.months}
+              filter={filter}
+              onChange={setFilter}
+            />
+          ) : undefined
+        }
       />
 
       {loading && !hasAnyData && (
@@ -119,10 +143,7 @@ export default function IngresosPage() {
             <KpiCard label="AOV" value={formatCurrency(aov)} mom={getMoM(kpi, "AOV")} />
           </div>
 
-          <Panel
-            title="Ingresos netos en el tiempo"
-            action={<RangeFilter value={range} onChange={setRange} />}
-          >
+          <Panel title="Ingresos netos en el tiempo">
             <TrendChart
               data={ingresosSeries}
               color="#1e9e3a"

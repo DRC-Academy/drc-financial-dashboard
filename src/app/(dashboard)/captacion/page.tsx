@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
@@ -9,8 +9,14 @@ import { Panel } from "@/components/ui/Panel";
 import { TrendChart } from "@/components/ui/TrendChart";
 import { BarComparison } from "@/components/ui/BarComparison";
 import { FunnelSteps } from "@/components/ui/FunnelSteps";
-import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
+import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
+import {
+  filterKpi,
+  filterMonths,
+  DEFAULT_FILTER,
+  type DateFilter,
+} from "@/lib/dateFilter";
 import {
   getLatest,
   getMoM,
@@ -27,10 +33,19 @@ export default function CaptacionPage() {
     "/api/kpi",
     60_000
   );
-  const [range, setRange] = useState(6);
+  const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
 
-  const kpi = data ?? { months: [], keys: [], data: {} };
-  const hasAnyData = kpi.months.length > 0;
+  const kpiAll = data ?? { months: [], keys: [], data: {} };
+  const hasAnyData = kpiAll.months.length > 0;
+
+  const visibleMonths = useMemo(
+    () => filterMonths(kpiAll.months, filter),
+    [kpiAll, filter]
+  );
+  const kpi = useMemo(
+    () => filterKpi(kpiAll, visibleMonths),
+    [kpiAll, visibleMonths]
+  );
 
   const leadsTotales = getLatest(kpi, "leads_totales_ads");
   const cpl = getLatest(kpi, "CPL_ads");
@@ -41,10 +56,10 @@ export default function CaptacionPage() {
   const roiCapt = getLatest(kpi, "ROI_capt");
   const roasNew = getLatest(kpi, "ROAS_new");
 
-  const months = applyRange(kpi.months, range);
+  const months = kpi.months;
 
-  const cplSeries = applyRange(getSeries(kpi, "CPL_ads"), range);
-  const cacSeries = applyRange(getSeries(kpi, "CAC"), range);
+  const cplSeries = getSeries(kpi, "CPL_ads");
+  const cacSeries = getSeries(kpi, "CAC");
 
   // ROI_google / ROI_meta no existen en DB_KPI: se derivan (ingresos - ads) / ads.
   const canalComparison = months.map((month) => ({
@@ -65,6 +80,15 @@ export default function CaptacionPage() {
         title="De dónde vienen los alumnos y a qué costo"
         description="Funnel lead → venta y comparativa Google Ads vs Meta Ads."
         right={<LiveIndicator fetchedAt={fetchedAt} error={error} />}
+        filter={
+          hasAnyData ? (
+            <DateRangeFilter
+              months={kpiAll.months}
+              filter={filter}
+              onChange={setFilter}
+            />
+          ) : undefined
+        }
       />
 
       {loading && !hasAnyData && (
@@ -141,7 +165,6 @@ export default function CaptacionPage() {
           <Panel
             title="Google vs Meta — ROI"
             description="Comparativa mensual del retorno de cada canal"
-            action={<RangeFilter value={range} onChange={setRange} />}
           >
             <BarComparison
               data={canalComparison}
