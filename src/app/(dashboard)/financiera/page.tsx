@@ -12,6 +12,8 @@ import {
   getMoM,
   getSemaforo,
   getSeries,
+  getLtvCacLatest,
+  getLtvCacMoM,
   formatCurrency,
   formatNumber,
 } from "@/lib/kpiHelpers";
@@ -31,7 +33,7 @@ export default function FinancieraPage() {
   const arpc = getLatest(kpi, "ARPC");
   const ltv = getLatest(kpi, "LTV");
   const cac = getLatest(kpi, "CAC");
-  const ltvCac = getLatest(kpi, "LTV_CAC");
+  const ltvCac = getLtvCacLatest(kpi);
   const nmEbitda = getLatest(kpi, "NM_ebitda");
   const ingresosAcumulados = getLatest(kpi, "ingresos_acumulados");
   const clientesAcumulados = getLatest(kpi, "clientes_acumulados");
@@ -80,7 +82,7 @@ export default function FinancieraPage() {
             <KpiCard
               label="LTV : CAC"
               value={ltvCac !== null ? `${formatNumber(ltvCac)}x` : "—"}
-              mom={getMoM(kpi, "LTV_CAC")}
+              mom={getLtvCacMoM(kpi)}
             />
             <KpiCard
               label="Margen neto (EBITDA)"

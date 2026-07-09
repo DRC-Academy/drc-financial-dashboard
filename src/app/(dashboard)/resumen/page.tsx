@@ -10,6 +10,9 @@ import {
   getLatest,
   getMoM,
   getSemaforo,
+  getRoiCanalLatest,
+  getLtvCacLatest,
+  getLtvCacMoM,
   formatCurrency,
   formatNumber,
   formatPercent,
@@ -33,15 +36,15 @@ export default function ResumenPage() {
   const retention = getLatest(kpi, "retention_rate");
   const ltv = getLatest(kpi, "LTV");
   const cac = getLatest(kpi, "CAC");
-  const ltvCac = getLatest(kpi, "LTV_CAC");
+  const ltvCac = getLtvCacLatest(kpi);
   const roiMarketing = getLatest(kpi, "ROI_marketing");
 
   const cacObj = getLatest(kpi, "CAC_obj");
   const ltvObj = getLatest(kpi, "LTV_obj");
   const churnObj = getLatest(kpi, "churn_obj");
 
-  const roiGoogle = getLatest(kpi, "ROI_google");
-  const roiMeta = getLatest(kpi, "ROI_meta");
+  const roiGoogle = getRoiCanalLatest(kpi, "google");
+  const roiMeta = getRoiCanalLatest(kpi, "meta");
 
   let mejorCanal: string | null = null;
   if (roiGoogle !== null && roiMeta !== null) {
@@ -89,11 +92,11 @@ export default function ResumenPage() {
             />
             <KpiCard
               label="Clientes en churn"
-              value={formatNumber(churn)}
+              value={formatPercent(churn)}
               mom={getMoM(kpi, "clientes_churn")}
               momIsGoodWhenPositive={false}
               semaforo={getSemaforo(churn, churnObj, true)}
-              hint={churnObj !== null ? `Objetivo: ${formatNumber(churnObj)}` : undefined}
+              hint={churnObj !== null ? `Objetivo: ${formatPercent(churnObj)}` : undefined}
             />
             <KpiCard
               label="Retención"
@@ -118,7 +121,7 @@ export default function ResumenPage() {
             <KpiCard
               label="LTV : CAC"
               value={ltvCac !== null ? `${formatNumber(ltvCac)}x` : "—"}
-              mom={getMoM(kpi, "LTV_CAC")}
+              mom={getLtvCacMoM(kpi)}
             />
             <KpiCard
               label="ROI marketing"

@@ -15,6 +15,7 @@ import {
   getLatest,
   getMoM,
   getSeries,
+  getRoiCanal,
   formatCurrency,
   formatNumber,
   formatPercent,
@@ -45,10 +46,11 @@ export default function CaptacionPage() {
   const cplSeries = applyRange(getSeries(kpi, "CPL_ads"), range);
   const cacSeries = applyRange(getSeries(kpi, "CAC"), range);
 
+  // ROI_google / ROI_meta no existen en DB_KPI: se derivan (ingresos - ads) / ads.
   const canalComparison = months.map((month) => ({
     month,
-    ROI_google: kpi.data[month]?.["ROI_google"] ?? null,
-    ROI_meta: kpi.data[month]?.["ROI_meta"] ?? null,
+    ROI_google: getRoiCanal(kpi, month, "google"),
+    ROI_meta: getRoiCanal(kpi, month, "meta"),
   }));
 
   const leadsGoogle = getLatest(kpi, "leads_ads_google");
@@ -147,7 +149,7 @@ export default function CaptacionPage() {
                 { key: "ROI_google", label: "Google", color: "#1e9e3a" },
                 { key: "ROI_meta", label: "Meta", color: "#ffc400" },
               ]}
-              valueFormatter={(v) => `${v}%`}
+              valueFormatter={(v) => formatPercent(v)}
             />
           </Panel>
 

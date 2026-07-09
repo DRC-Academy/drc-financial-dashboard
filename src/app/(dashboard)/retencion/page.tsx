@@ -13,8 +13,10 @@ import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   getLatest,
+  getLatestAbs,
   getMoM,
-  getSeries,
+  getMoMAbs,
+  getLtvCacSeries,
   formatCurrency,
   formatNumber,
   formatPercent,
@@ -42,14 +44,14 @@ export default function RetencionPage() {
 
   const clientesActivos = getLatest(kpi, "clientes_activos");
   const clientesNuevos = getLatest(kpi, "clientes_nuevos");
-  const clientesPerdidos = getLatest(kpi, "clientes_perdidos");
+  const clientesPerdidos = getLatestAbs(kpi, "clientes_perdidos");
   const retention = getLatest(kpi, "retention_rate");
   const churn3m = getLatest(kpi, "clientes_churn_3m");
   const arpc = getLatest(kpi, "ARPC");
   const ltvChurn = getLatest(kpi, "LTV_churn");
   const permanencia = getLatest(kpi, "permanencia");
 
-  const ltvCacSeries = applyRange(getSeries(kpi, "LTV_CAC"), range);
+  const ltvCacSeries = applyRange(getLtvCacSeries(kpi), range);
 
   const motivos = useMemo(() => {
     const rows = cancelaciones.data ?? [];
@@ -93,7 +95,7 @@ export default function RetencionPage() {
             <KpiCard
               label="Perdidos"
               value={formatNumber(clientesPerdidos)}
-              mom={getMoM(kpi, "clientes_perdidos")}
+              mom={getMoMAbs(kpi, "clientes_perdidos")}
               momIsGoodWhenPositive={false}
             />
             <KpiCard
