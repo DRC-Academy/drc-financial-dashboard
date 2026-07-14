@@ -5,6 +5,7 @@ import clsx from "clsx";
 const OPTIONS = [
   { label: "3M", value: 3 },
   { label: "6M", value: 6 },
+  { label: "9M", value: 9 },
   { label: "12M", value: 12 },
   { label: "Todo", value: 0 },
 ];

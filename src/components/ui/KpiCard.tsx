@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import clsx from "clsx";
 import type { SemaforoColor } from "@/lib/kpiHelpers";
 
@@ -15,6 +16,8 @@ export function KpiCard({
   momIsGoodWhenPositive = true,
   semaforo = "neutral",
   hint,
+  size = "md",
+  children,
 }: {
   label: string;
   value: string;
@@ -22,13 +25,23 @@ export function KpiCard({
   momIsGoodWhenPositive?: boolean;
   semaforo?: SemaforoColor;
   hint?: string;
+  /** "lg" → tarjeta destacada (valor más grande), para la métrica principal. */
+  size?: "md" | "lg";
+  /** Contenido extra bajo el valor (p. ej. sub-valores B2C / B2B). */
+  children?: ReactNode;
 }) {
   const hasMom = mom !== undefined && mom !== null;
   const momPositive = hasMom && (mom as number) >= 0;
-  const momGood = hasMom && (momPositive === momIsGoodWhenPositive);
+  const momGood = hasMom && momPositive === momIsGoodWhenPositive;
+  const isLg = size === "lg";
 
   return (
-    <div className="relative overflow-hidden rounded-xl bg-drc-card border border-drc-line pl-4 pr-4 py-4 shadow-[0_1px_2px_rgba(20,35,26,0.04)]">
+    <div
+      className={clsx(
+        "relative overflow-hidden rounded-xl bg-drc-card border border-drc-line shadow-[0_1px_2px_rgba(20,35,26,0.04)]",
+        isLg ? "pl-5 pr-5 py-5" : "pl-4 pr-4 py-4"
+      )}
+    >
       <span
         className={clsx(
           "absolute left-0 top-0 h-full w-1.5",
@@ -40,7 +53,12 @@ export function KpiCard({
         {label}
       </div>
       <div className="mt-1.5 flex items-baseline gap-2">
-        <span className="tabular text-2xl font-semibold text-drc-ink">
+        <span
+          className={clsx(
+            "tabular font-semibold text-drc-ink",
+            isLg ? "text-4xl" : "text-2xl"
+          )}
+        >
           {value}
         </span>
         {hasMom && (
@@ -56,6 +74,7 @@ export function KpiCard({
           </span>
         )}
       </div>
+      {children && <div className="mt-2">{children}</div>}
       {hint && <div className="mt-1 text-[11px] text-drc-ink-soft">{hint}</div>}
     </div>
   );

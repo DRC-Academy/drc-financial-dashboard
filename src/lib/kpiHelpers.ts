@@ -41,6 +41,47 @@ export function getMoM(kpi: DBKpiData, key: string): number | null {
   return ((latest - prev) / Math.abs(prev)) * 100;
 }
 
+/**
+ * Valor de una métrica en un mes concreto (el que elige el usuario en el
+ * desplegable de mes), en vez de asumir el último. Devuelve null si ese mes no
+ * tiene dato para la clave. No reemplaza a getLatest: convive con él.
+ */
+export function getValueAtMonth(
+  kpi: DBKpiData,
+  key: string,
+  month: string
+): MetricValue {
+  if (!month) return null;
+  const v = kpi.data[month]?.[key];
+  return v === null || v === undefined ? null : v;
+}
+
+/**
+ * Variación mes a mes calculada respecto al mes elegido: compara el valor del
+ * mes seleccionado contra el mes anterior con dato (dentro de kpi.months).
+ * Devuelve null si no se puede calcular.
+ */
+export function getMoMAtMonth(
+  kpi: DBKpiData,
+  key: string,
+  month: string
+): number | null {
+  const idx = kpi.months.indexOf(month);
+  if (idx < 0) return null;
+  const latest = getValueAtMonth(kpi, key, month);
+  if (latest === null) return null;
+  let prev: MetricValue = null;
+  for (let i = idx - 1; i >= 0; i--) {
+    const v = kpi.data[kpi.months[i]]?.[key];
+    if (v !== null && v !== undefined) {
+      prev = v;
+      break;
+    }
+  }
+  if (prev === null || prev === 0) return null;
+  return ((latest - prev) / Math.abs(prev)) * 100;
+}
+
 export type SemaforoColor = "green" | "yellow" | "red" | "neutral";
 
 /**

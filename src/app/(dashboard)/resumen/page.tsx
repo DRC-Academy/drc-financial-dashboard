@@ -1,27 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
+import { MonthSelect } from "@/components/ui/MonthSelect";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
 import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
-import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
+import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
+import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
-  filterKpi,
-  filterMonths,
-  DEFAULT_FILTER,
-  type DateFilter,
-} from "@/lib/dateFilter";
-import {
-  getLatest,
-  getMoM,
+  getValueAtMonth,
+  getMoMAtMonth,
   getSemaforo,
   getRoiCanalLatest,
-  getLtvCacLatest,
-  getLtvCacMoM,
   formatCurrency,
   formatNumber,
   formatPercent,
@@ -34,37 +28,75 @@ export default function ResumenPage() {
     60_000
   );
 
-  const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
-  const kpiAll = data ?? { months: [], keys: [], data: {} };
-  const hasAnyData = kpiAll.months.length > 0;
+  const kpi = data ?? { months: [], keys: [], data: {} };
+  const months = kpi.months;
+  const hasAnyData = months.length > 0;
 
-  const visibleMonths = useMemo(
-    () => filterMonths(kpiAll.months, filter),
-    [kpiAll, filter]
-  );
-  const kpi = useMemo(
-    () => filterKpi(kpiAll, visibleMonths),
-    [kpiAll, visibleMonths]
-  );
+  // Desplegable de mes: controla SOLO las tarjetas KPI. Si no hay elección
+  // válida, cae al último mes disponible.
+  const [monthChoice, setMonthChoice] = useState<string>("");
+  const activeMonth =
+    monthChoice && months.includes(monthChoice)
+      ? monthChoice
+      : months[months.length - 1] ?? "";
 
-  const ingresos = getLatest(kpi, "ingresos_netos");
-  const mrr = getLatest(kpi, "MRR");
-  const mrrNet = getLatest(kpi, "MRR_net");
-  const mrrMoM = getLatest(kpi, "MRR_MoM");
-  const churn = getLatest(kpi, "clientes_churn");
-  const retention = getLatest(kpi, "retention_rate");
-  const ltv = getLatest(kpi, "LTV");
-  const cac = getLatest(kpi, "CAC");
-  const ltvCac = getLtvCacLatest(kpi);
-  const roiMarketing = getLatest(kpi, "ROI_marketing");
+  // Rangos independientes por gráfico (no afectan las tarjetas).
+  const [ingRange, setIngRange] = useState(0);
+  const [pedRange, setPedRange] = useState(0);
+  const [cliRange, setCliRange] = useState(0);
 
-  const cacObj = getLatest(kpi, "CAC_obj");
-  const ltvObj = getLatest(kpi, "LTV_obj");
-  const churnObj = getLatest(kpi, "churn_obj");
+  // ---- Tarjetas destacadas ----
+  const ingresos = getValueAtMonth(kpi, "ingresos_netos", activeMonth);
 
+  const b2c = getValueAtMonth(kpi, "ingresos_B2C_netos", activeMonth);
+  const b2b = getValueAtMonth(kpi, "ingresos_B2B", activeMonth);
+  // "ingresos_DRC" = B2C neto + B2B. No es columna del Sheet: se suma acá.
+  const drcAcademy = b2c === null && b2b === null ? null : (b2c ?? 0) + (b2b ?? 0);
+
+  // ingresos_oritalk a veces viene como "" en el Sheet → el parser ya lo pasa a
+  // null, así que formatCurrency(null) muestra "—" sin romperse.
+  const oritalk = getValueAtMonth(kpi, "ingresos_oritalk", activeMonth);
+
+  // ---- Tarjetas normales ----
+  const churn = getValueAtMonth(kpi, "clientes_churn", activeMonth);
+  const churnObj = getValueAtMonth(kpi, "churn_obj", activeMonth);
+  const cac = getValueAtMonth(kpi, "CAC", activeMonth);
+  const cacObj = getValueAtMonth(kpi, "CAC_obj", activeMonth);
+  const ltv = getValueAtMonth(kpi, "LTV", activeMonth);
+  const ltvObj = getValueAtMonth(kpi, "LTV_obj", activeMonth);
+
+  // LTV:CAC del mes elegido (la columna LTV_CAC del Sheet está rota → se calcula).
+  const ltvCac = ltv !== null && cac !== null && cac !== 0 ? ltv / cac : null;
+
+  // ---- Gráficos (usan su propio rango, sobre el dataset completo) ----
+  const ingresosMrrSeries = applyRange(months, ingRange).map((month) => ({
+    month,
+    ingresos_netos: kpi.data[month]?.["ingresos_netos"] ?? null,
+    MRR: kpi.data[month]?.["MRR"] ?? null,
+  }));
+
+  const pedidosAovRows = applyRange(months, pedRange).map((month) => ({
+    month,
+    pedidos_nuevos: kpi.data[month]?.["pedidos_nuevos"] ?? null,
+    pedidos_recurrentes: kpi.data[month]?.["pedidos_recurrentes"] ?? null,
+    AOV: kpi.data[month]?.["AOV"] ?? null,
+  }));
+
+  const clientesRows = applyRange(months, cliRange).map((month) => {
+    const perdidos = kpi.data[month]?.["clientes_perdidos"] ?? null;
+    return {
+      month,
+      clientes_nuevos: kpi.data[month]?.["clientes_nuevos"] ?? null,
+      clientes_recurrentes: kpi.data[month]?.["clientes_recurrentes"] ?? null,
+      // clientes_perdidos viene en negativo (convención de "pérdida"): magnitud.
+      clientes_perdidos: perdidos === null ? null : Math.abs(perdidos),
+      retention_rate: kpi.data[month]?.["retention_rate"] ?? null,
+    };
+  });
+
+  // ---- Oportunidad del mes (mejor canal por ROI del último mes) ----
   const roiGoogle = getRoiCanalLatest(kpi, "google");
   const roiMeta = getRoiCanalLatest(kpi, "meta");
-
   let mejorCanal: string | null = null;
   if (roiGoogle !== null && roiMeta !== null) {
     mejorCanal = roiGoogle >= roiMeta ? "Google Ads" : "Meta Ads";
@@ -74,27 +106,23 @@ export default function ResumenPage() {
     mejorCanal = "Meta Ads";
   }
 
-  const ingresosMrrSeries = kpi.months.map((month) => ({
-    month,
-    ingresos_netos: kpi.data[month]?.["ingresos_netos"] ?? null,
-    MRR: kpi.data[month]?.["MRR"] ?? null,
-  }));
-
   return (
     <>
       <PageHeader
         eyebrow="01 · Resumen ejecutivo"
         title="Cómo está el negocio, de un vistazo"
-        description="Últimos valores disponibles en el Sheet, con variación mes a mes y semáforo contra objetivo."
-        right={<LiveIndicator fetchedAt={fetchedAt} error={error} />}
-        filter={
-          hasAnyData ? (
-            <DateRangeFilter
-              months={kpiAll.months}
-              filter={filter}
-              onChange={setFilter}
-            />
-          ) : undefined
+        description="Elegí el mes para las tarjetas KPI; cada gráfico tiene su propio rango temporal."
+        right={
+          <div className="flex flex-wrap items-center gap-3">
+            {hasAnyData && (
+              <MonthSelect
+                months={months}
+                value={activeMonth}
+                onChange={setMonthChoice}
+              />
+            )}
+            <LiveIndicator fetchedAt={fetchedAt} error={error} />
+          </div>
         }
       />
 
@@ -108,65 +136,119 @@ export default function ResumenPage() {
 
       {hasAnyData && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+          {/* Fila destacada: ingresos netos (1.5x) + DRC Academy + Oritalk */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-4">
             <KpiCard
+              size="lg"
               label="Ingresos netos"
               value={formatCurrency(ingresos)}
-              mom={getMoM(kpi, "ingresos_netos")}
+              mom={getMoMAtMonth(kpi, "ingresos_netos", activeMonth)}
             />
-            <KpiCard label="MRR" value={formatCurrency(mrr)} mom={getMoM(kpi, "MRR")} />
+            <KpiCard label="DRC Academy" value={formatCurrency(drcAcademy)}>
+              <div className="flex gap-4 text-[11px] text-drc-ink-soft">
+                <span>
+                  B2C:{" "}
+                  <span className="tabular text-drc-ink font-medium">
+                    {formatCurrency(b2c)}
+                  </span>
+                </span>
+                <span>
+                  B2B:{" "}
+                  <span className="tabular text-drc-ink font-medium">
+                    {formatCurrency(b2b)}
+                  </span>
+                </span>
+              </div>
+            </KpiCard>
+            <KpiCard
+              label="Oritalk"
+              value={formatCurrency(oritalk)}
+              mom={getMoMAtMonth(kpi, "ingresos_oritalk", activeMonth)}
+            />
+          </div>
+
+          {/* Resto de tarjetas en grilla normal */}
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            <KpiCard
+              label="MRR"
+              value={formatCurrency(getValueAtMonth(kpi, "MRR", activeMonth))}
+              mom={getMoMAtMonth(kpi, "MRR", activeMonth)}
+            />
             <KpiCard
               label="MRR neto"
-              value={formatCurrency(mrrNet)}
-              mom={getMoM(kpi, "MRR_net")}
+              value={formatCurrency(getValueAtMonth(kpi, "MRR_net", activeMonth))}
+              mom={getMoMAtMonth(kpi, "MRR_net", activeMonth)}
             />
             <KpiCard
               label="MRR MoM"
-              value={mrrMoM !== null ? formatPercent(mrrMoM) : "—"}
+              value={formatPercent(getValueAtMonth(kpi, "MRR_MoM", activeMonth))}
+            />
+            <KpiCard
+              label="Suscripciones activas"
+              value={formatNumber(
+                getValueAtMonth(kpi, "suscripciones_activas", activeMonth)
+              )}
+              mom={getMoMAtMonth(kpi, "suscripciones_activas", activeMonth)}
             />
             <KpiCard
               label="Clientes en churn"
               value={formatPercent(churn)}
-              mom={getMoM(kpi, "clientes_churn")}
+              mom={getMoMAtMonth(kpi, "clientes_churn", activeMonth)}
               momIsGoodWhenPositive={false}
               semaforo={getSemaforo(churn, churnObj, true)}
               hint={churnObj !== null ? `Objetivo: ${formatPercent(churnObj)}` : undefined}
             />
             <KpiCard
               label="Retención"
-              value={formatPercent(retention)}
-              mom={getMoM(kpi, "retention_rate")}
+              value={formatPercent(getValueAtMonth(kpi, "retention_rate", activeMonth))}
+              mom={getMoMAtMonth(kpi, "retention_rate", activeMonth)}
             />
             <KpiCard
-              label="LTV"
-              value={formatCurrency(ltv)}
-              mom={getMoM(kpi, "LTV")}
-              semaforo={getSemaforo(ltv, ltvObj, false)}
-              hint={ltvObj !== null ? `Objetivo: ${formatCurrency(ltvObj)}` : undefined}
+              label="CPL Ads"
+              value={formatCurrency(getValueAtMonth(kpi, "CPL_ads", activeMonth))}
+              mom={getMoMAtMonth(kpi, "CPL_ads", activeMonth)}
+              momIsGoodWhenPositive={false}
             />
             <KpiCard
               label="CAC"
               value={formatCurrency(cac)}
-              mom={getMoM(kpi, "CAC")}
+              mom={getMoMAtMonth(kpi, "CAC", activeMonth)}
               momIsGoodWhenPositive={false}
               semaforo={getSemaforo(cac, cacObj, true)}
               hint={cacObj !== null ? `Objetivo: ${formatCurrency(cacObj)}` : undefined}
             />
             <KpiCard
+              label="AOV nuevos"
+              value={formatCurrency(getValueAtMonth(kpi, "AOV_nuevos", activeMonth))}
+              mom={getMoMAtMonth(kpi, "AOV_nuevos", activeMonth)}
+            />
+            <KpiCard
+              label="Ventas Hugo"
+              value={formatNumber(getValueAtMonth(kpi, "ventas_hugo", activeMonth))}
+              mom={getMoMAtMonth(kpi, "ventas_hugo", activeMonth)}
+            />
+            <KpiCard
+              label="LTV"
+              value={formatCurrency(ltv)}
+              mom={getMoMAtMonth(kpi, "LTV", activeMonth)}
+              semaforo={getSemaforo(ltv, ltvObj, false)}
+              hint={ltvObj !== null ? `Objetivo: ${formatCurrency(ltvObj)}` : undefined}
+            />
+            <KpiCard
               label="LTV : CAC"
               value={ltvCac !== null ? `${formatNumber(ltvCac)}x` : "—"}
-              mom={getLtvCacMoM(kpi)}
             />
             <KpiCard
               label="ROI marketing"
-              value={formatPercent(roiMarketing)}
-              mom={getMoM(kpi, "ROI_marketing")}
+              value={formatPercent(getValueAtMonth(kpi, "ROI_marketing", activeMonth))}
+              mom={getMoMAtMonth(kpi, "ROI_marketing", activeMonth)}
             />
           </div>
 
           <Panel
             title="Ingresos netos y MRR en el tiempo"
             description="Evolución conjunta sobre la misma línea temporal."
+            action={<RangeFilter value={ingRange} onChange={setIngRange} />}
           >
             <MultiTrendChart
               data={ingresosMrrSeries}
@@ -175,6 +257,42 @@ export default function ResumenPage() {
                 { key: "MRR", label: "MRR", color: "#ffc400" },
               ]}
               valueFormatter={(v) => formatCurrency(v)}
+            />
+          </Panel>
+
+          <Panel
+            title="Pedidos y ticket medio (AOV)"
+            description="Pedidos nuevos + recurrentes (apilados, eje izq.) y AOV como línea sobre eje derecho en € — escalas distintas, por eso el eje dual."
+            action={<RangeFilter value={pedRange} onChange={setPedRange} />}
+          >
+            <ComposedBarLineChart
+              data={pedidosAovRows}
+              stacked
+              bars={[
+                { key: "pedidos_nuevos", label: "Pedidos nuevos", color: "#ffc400" },
+                { key: "pedidos_recurrentes", label: "Pedidos recurrentes", color: "#1e9e3a" },
+              ]}
+              line={{ key: "AOV", label: "AOV", color: "#143a24" }}
+              barFormatter={(v) => formatNumber(v)}
+              lineFormatter={(v) => formatCurrency(v)}
+            />
+          </Panel>
+
+          <Panel
+            title="Movimiento de clientes y retención"
+            description="Altas, recurrentes y perdidos (magnitud, eje izq.) con la tasa de retención como línea (%) sobre eje derecho."
+            action={<RangeFilter value={cliRange} onChange={setCliRange} />}
+          >
+            <ComposedBarLineChart
+              data={clientesRows}
+              bars={[
+                { key: "clientes_nuevos", label: "Nuevos", color: "#1e9e3a" },
+                { key: "clientes_recurrentes", label: "Recurrentes", color: "#8bbf9f" },
+                { key: "clientes_perdidos", label: "Perdidos", color: "#d6483c" },
+              ]}
+              line={{ key: "retention_rate", label: "Retención", color: "#143a24" }}
+              barFormatter={(v) => formatNumber(v)}
+              lineFormatter={(v) => formatPercent(v)}
             />
           </Panel>
 
