@@ -6,7 +6,12 @@
   --drc-green-deep: #0f2a1b;
   --drc-green-deep-2: #143a24;
   --drc-yellow: #ffc400;
+  --drc-orange: #e07a1f;
   --drc-red: #d6483c;
+  /* Variantes oscuras SOLO para texto: el amarillo y el naranja de marca no
+     llegan al contraste mínimo sobre fondo claro (chips de alerta n3). */
+  --drc-yellow-deep: #8a6400;
+  --drc-orange-deep: #94480a;
   --drc-bg: #f7f7f5;
   --drc-ink: #14231a;
   --drc-ink-soft: #4b5d53;
@@ -23,6 +28,9 @@
   --color-drc-green: var(--drc-green);
   --color-drc-green-deep: var(--drc-green-deep);
   --color-drc-yellow: var(--drc-yellow);
+  --color-drc-yellow-deep: var(--drc-yellow-deep);
+  --color-drc-orange: var(--drc-orange);
+  --color-drc-orange-deep: var(--drc-orange-deep);
   --color-drc-red: var(--drc-red);
   --color-drc-bg: var(--drc-bg);
   --color-drc-ink: var(--drc-ink);

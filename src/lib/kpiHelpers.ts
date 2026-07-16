@@ -82,6 +82,30 @@ export function getMoMAtMonth(
   return ((latest - prev) / Math.abs(prev)) * 100;
 }
 
+/**
+ * Delta ABSOLUTO respecto al mes anterior con dato, en la unidad de la métrica
+ * (€, pedidos, ...) en vez de en %. Mismo criterio de "mes anterior" que
+ * getMoMAtMonth: el anterior CON dato, no el inmediatamente previo.
+ *
+ * A diferencia de getMoMAtMonth, sí devuelve valor cuando el mes anterior es 0
+ * (ahí el % no existe pero el delta sigue siendo informativo).
+ */
+export function getDeltaAtMonth(
+  kpi: DBKpiData,
+  key: string,
+  month: string
+): number | null {
+  const idx = kpi.months.indexOf(month);
+  if (idx < 0) return null;
+  const latest = getValueAtMonth(kpi, key, month);
+  if (latest === null) return null;
+  for (let i = idx - 1; i >= 0; i--) {
+    const v = kpi.data[kpi.months[i]]?.[key];
+    if (v !== null && v !== undefined) return latest - v;
+  }
+  return null;
+}
+
 export type SemaforoColor = "green" | "yellow" | "red" | "neutral";
 
 /**
@@ -102,20 +126,76 @@ export function getSemaforo(
   return "red";
 }
 
+export type AlertaColor = "green" | "yellow" | "orange" | "red";
+
+export interface AlertaOperativa {
+  texto: string;
+  color: AlertaColor;
+}
+
+/** Métricas con umbrales de alerta definidos. */
+export type AlertaKey = "CPL_ads" | "CAC" | "CR_clientes";
+
+/**
+ * Alerta operativa por umbrales fijos (se pinta en el nivel n3 de la tarjeta).
+ * Función pura y client-safe: no toca el Sheet ni sheetsClient.
+ *
+ * CPL_ads y CAC son COSTES → cuanto más alto, peor.
+ * CR_clientes es una TASA de conversión en FRACCIÓN 0-1, tal cual viene del
+ * Sheet (sin ×100) → cuanto más alto, mejor, así que sus umbrales van al revés.
+ *
+ * value <= 0 (o null) → null: no hay dato útil que juzgar y la tarjeta no
+ * renderiza nada (no deja hueco).
+ */
+export function getAlertaOperativa(
+  key: AlertaKey,
+  value: MetricValue
+): AlertaOperativa | null {
+  if (value === null || value <= 0) return null;
+
+  switch (key) {
+    case "CPL_ads":
+      if (value < 12) return { texto: "EN OBJETIVO", color: "green" };
+      if (value < 15) return { texto: "BIEN", color: "yellow" };
+      if (value < 20) return { texto: "MEJORABLE", color: "orange" };
+      return { texto: "PELIGRO", color: "red" };
+    case "CAC":
+      if (value < 65) return { texto: "EN OBJETIVO", color: "green" };
+      if (value < 80) return { texto: "BIEN", color: "yellow" };
+      if (value < 120) return { texto: "MEJORABLE", color: "orange" };
+      return { texto: "PELIGRO", color: "red" };
+    case "CR_clientes":
+      if (value < 0.2) return { texto: "PELIGRO", color: "red" };
+      if (value < 0.25) return { texto: "MEJORABLE", color: "orange" };
+      if (value < 0.28) return { texto: "BIEN", color: "yellow" };
+      return { texto: "EN OBJETIVO", color: "green" };
+  }
+}
+
+/**
+ * es-ES define minimumGroupingDigits=2 en CLDR: por defecto NO agrupa los
+ * números de 4 dígitos (3000 → "3000", 8513.82 € → "8514 €"). El dashboard los
+ * quiere siempre agrupados ("3.000", "8.514 €"), y eso es lo que fuerza
+ * useGrouping:"always". El separador decimal (coma) ya lo da el locale.
+ */
+const GROUPING = { useGrouping: "always" } as const;
+
 export function formatCurrency(value: MetricValue, currency = "EUR"): string {
   if (value === null) return "—";
   return new Intl.NumberFormat("es-ES", {
     style: "currency",
     currency,
     maximumFractionDigits: 0,
+    ...GROUPING,
   }).format(value);
 }
 
 export function formatNumber(value: MetricValue): string {
   if (value === null) return "—";
-  return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(
-    value
-  );
+  return new Intl.NumberFormat("es-ES", {
+    maximumFractionDigits: 1,
+    ...GROUPING,
+  }).format(value);
 }
 
 /**
@@ -126,7 +206,46 @@ export function formatPercent(value: MetricValue): string {
   if (value === null) return "—";
   return `${new Intl.NumberFormat("es-ES", {
     maximumFractionDigits: 1,
+    ...GROUPING,
   }).format(value * 100)}%`;
+}
+
+/**
+ * Formatea un valor YA expresado en PUNTOS porcentuales (5.34 → "5,3%"), sin
+ * multiplicar. Para las variaciones (getMoM*, que ya devuelven ×100), a
+ * diferencia de formatPercent, que espera una fracción.
+ */
+export function formatPercentPoints(value: MetricValue): string {
+  if (value === null) return "—";
+  return `${new Intl.NumberFormat("es-ES", {
+    maximumFractionDigits: 1,
+    ...GROUPING,
+  }).format(value)}%`;
+}
+
+/** Delta absoluto en € con signo explícito: 450 → "+450 €", -450 → "-450 €". */
+export function formatCurrencyDelta(
+  value: MetricValue,
+  currency = "EUR"
+): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("es-ES", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+    signDisplay: "exceptZero",
+    ...GROUPING,
+  }).format(value);
+}
+
+/** Delta absoluto numérico con signo explícito: 8 → "+8", -8 → "-8". */
+export function formatNumberDelta(value: MetricValue): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("es-ES", {
+    maximumFractionDigits: 1,
+    signDisplay: "exceptZero",
+    ...GROUPING,
+  }).format(value);
 }
 
 /** Meses abreviados en español para convertir seriales de fecha de Sheets. */

@@ -14,10 +14,14 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import {
   getValueAtMonth,
   getMoMAtMonth,
+  getDeltaAtMonth,
   getSemaforo,
+  getAlertaOperativa,
   getRoiCanalLatest,
   formatCurrency,
+  formatCurrencyDelta,
   formatNumber,
+  formatNumberDelta,
   formatPercent,
 } from "@/lib/kpiHelpers";
 import type { DBKpiData } from "@/types/kpi";
@@ -45,28 +49,32 @@ export default function ResumenPage() {
   const [pedRange, setPedRange] = useState(0);
   const [cliRange, setCliRange] = useState(0);
 
-  // ---- Tarjetas destacadas ----
+  // ---- Fila 1 · Ingresos ----
   const ingresos = getValueAtMonth(kpi, "ingresos_netos", activeMonth);
+  const ingresosDelta = getDeltaAtMonth(kpi, "ingresos_netos", activeMonth);
 
   const b2c = getValueAtMonth(kpi, "ingresos_B2C_netos", activeMonth);
   const b2b = getValueAtMonth(kpi, "ingresos_B2B", activeMonth);
-  // "ingresos_DRC" = B2C neto + B2B. No es columna del Sheet: se suma acá.
+  // "DRC Academy" = B2C neto + B2B. No es columna del Sheet: se suma acá.
   const drcAcademy = b2c === null && b2b === null ? null : (b2c ?? 0) + (b2b ?? 0);
 
-  // ingresos_oritalk a veces viene como "" en el Sheet → el parser ya lo pasa a
-  // null, así que formatCurrency(null) muestra "—" sin romperse.
-  const oritalk = getValueAtMonth(kpi, "ingresos_oritalk", activeMonth);
+  // ---- Fila 2 · Pedidos ----
+  const pedidos = getValueAtMonth(kpi, "pedidos", activeMonth);
+  const pedidosDelta = getDeltaAtMonth(kpi, "pedidos", activeMonth);
 
-  // ---- Tarjetas normales ----
+  // ---- Fila 3 · MRR ----
+  // MRR_MoM ya es la variación calculada en el Sheet, en fracción (0.053 = 5,3%)
+  // igual que el resto de tasas → ×100 para el badge, que espera puntos.
+  const mrrMoM = getValueAtMonth(kpi, "MRR_MoM", activeMonth);
   const churn = getValueAtMonth(kpi, "clientes_churn", activeMonth);
   const churnObj = getValueAtMonth(kpi, "churn_obj", activeMonth);
-  const cac = getValueAtMonth(kpi, "CAC", activeMonth);
-  const cacObj = getValueAtMonth(kpi, "CAC_obj", activeMonth);
+
+  // ---- Fila 4 ----
   const ltv = getValueAtMonth(kpi, "LTV", activeMonth);
   const ltvObj = getValueAtMonth(kpi, "LTV_obj", activeMonth);
-
-  // LTV:CAC del mes elegido (la columna LTV_CAC del Sheet está rota → se calcula).
-  const ltvCac = ltv !== null && cac !== null && cac !== 0 ? ltv / cac : null;
+  const cpl = getValueAtMonth(kpi, "CPL_ads", activeMonth);
+  const cac = getValueAtMonth(kpi, "CAC", activeMonth);
+  const cr = getValueAtMonth(kpi, "CR_clientes", activeMonth);
 
   // ---- Gráficos (usan su propio rango, sobre el dataset completo) ----
   const ingresosMrrSeries = applyRange(months, ingRange).map((month) => ({
@@ -136,61 +144,87 @@ export default function ResumenPage() {
 
       {hasAnyData && (
         <div className="space-y-6">
-          {/* Fila destacada: ingresos netos (1.5x) + DRC Academy + Oritalk */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr] gap-4">
+          {/*
+            Filas 1-3 comparten una única grilla de 7 columnas para que la
+            tarjeta titular (T, span 3) quede alineada a lo ancho en las tres:
+            con grillas separadas los gaps distintos la desalinean unos píxeles.
+          */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
+            {/* --- Fila 1 · Ingresos --- */}
             <KpiCard
-              size="lg"
+              className="sm:col-span-2 lg:col-span-3"
+              size="titular"
               label="Ingresos netos"
               value={formatCurrency(ingresos)}
               mom={getMoMAtMonth(kpi, "ingresos_netos", activeMonth)}
+              subValues={[
+                { label: "vs. mes anterior", value: formatCurrencyDelta(ingresosDelta) },
+              ]}
             />
-            <KpiCard label="DRC Academy" value={formatCurrency(drcAcademy)}>
-              <div className="flex gap-4 text-[11px] text-drc-ink-soft">
-                <span>
-                  B2C:{" "}
-                  <span className="tabular text-drc-ink font-medium">
-                    {formatCurrency(b2c)}
-                  </span>
-                </span>
-                <span>
-                  B2B:{" "}
-                  <span className="tabular text-drc-ink font-medium">
-                    {formatCurrency(b2b)}
-                  </span>
-                </span>
-              </div>
-            </KpiCard>
             <KpiCard
-              label="Oritalk"
-              value={formatCurrency(oritalk)}
-              mom={getMoMAtMonth(kpi, "ingresos_oritalk", activeMonth)}
+              className="sm:col-span-2 lg:col-span-4"
+              label="DRC Academy"
+              value={formatCurrency(drcAcademy)}
+              subValues={[
+                { label: "B2C", value: formatCurrency(b2c) },
+                { label: "B2B", value: formatCurrency(b2b) },
+              ]}
+              subValuesPosition="right"
             />
-          </div>
 
-          {/* Resto de tarjetas en grilla normal */}
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            {/* --- Fila 2 · Pedidos --- */}
             <KpiCard
+              className="sm:col-span-2 lg:col-span-3"
+              size="titular"
+              label="Pedidos"
+              value={formatNumber(pedidos)}
+              mom={getMoMAtMonth(kpi, "pedidos", activeMonth)}
+              subValues={[
+                { label: "vs. mes anterior", value: formatNumberDelta(pedidosDelta) },
+              ]}
+            />
+            <KpiCard
+              className="lg:col-span-2"
+              label="AOV"
+              value={formatCurrency(getValueAtMonth(kpi, "AOV", activeMonth))}
+              mom={getMoMAtMonth(kpi, "AOV", activeMonth)}
+            />
+            {/* Columna "ventas": la de ventas_hugo NO existe en DB_KPI (la tarjeta
+                vieja "Ventas Hugo" mostraba "—" siempre). "ventas" es la única
+                columna de conteo de ventas: cuadra con el embudo de ads
+                (CAC ≈ ads_captacion/ventas, CR_clientes ≈ ventas/leads). */}
+            <KpiCard
+              className="lg:col-span-2"
+              label="Ventas"
+              value={formatNumber(getValueAtMonth(kpi, "ventas", activeMonth))}
+              mom={getMoMAtMonth(kpi, "ventas", activeMonth)}
+            />
+
+            {/* --- Fila 3 · MRR --- */}
+            <KpiCard
+              className="sm:col-span-2 lg:col-span-3"
+              size="titular"
               label="MRR"
               value={formatCurrency(getValueAtMonth(kpi, "MRR", activeMonth))}
-              mom={getMoMAtMonth(kpi, "MRR", activeMonth)}
+              mom={mrrMoM === null ? null : mrrMoM * 100}
+              subValues={[
+                {
+                  label: "MRR neto",
+                  value: formatCurrency(getValueAtMonth(kpi, "MRR_net", activeMonth)),
+                },
+              ]}
             />
             <KpiCard
-              label="MRR neto"
-              value={formatCurrency(getValueAtMonth(kpi, "MRR_net", activeMonth))}
-              mom={getMoMAtMonth(kpi, "MRR_net", activeMonth)}
-            />
-            <KpiCard
-              label="MRR MoM"
-              value={formatPercent(getValueAtMonth(kpi, "MRR_MoM", activeMonth))}
-            />
-            <KpiCard
+              className="lg:col-span-2"
               label="Suscripciones activas"
               value={formatNumber(
                 getValueAtMonth(kpi, "suscripciones_activas", activeMonth)
               )}
               mom={getMoMAtMonth(kpi, "suscripciones_activas", activeMonth)}
             />
+            {/* clientes_churn es una TASA (0.76 → "76%"), no un conteo. */}
             <KpiCard
+              className="lg:col-span-2"
               label="Clientes en churn"
               value={formatPercent(churn)}
               mom={getMoMAtMonth(kpi, "clientes_churn", activeMonth)}
@@ -198,35 +232,10 @@ export default function ResumenPage() {
               semaforo={getSemaforo(churn, churnObj, true)}
               hint={churnObj !== null ? `Objetivo: ${formatPercent(churnObj)}` : undefined}
             />
-            <KpiCard
-              label="Retención"
-              value={formatPercent(getValueAtMonth(kpi, "retention_rate", activeMonth))}
-              mom={getMoMAtMonth(kpi, "retention_rate", activeMonth)}
-            />
-            <KpiCard
-              label="CPL Ads"
-              value={formatCurrency(getValueAtMonth(kpi, "CPL_ads", activeMonth))}
-              mom={getMoMAtMonth(kpi, "CPL_ads", activeMonth)}
-              momIsGoodWhenPositive={false}
-            />
-            <KpiCard
-              label="CAC"
-              value={formatCurrency(cac)}
-              mom={getMoMAtMonth(kpi, "CAC", activeMonth)}
-              momIsGoodWhenPositive={false}
-              semaforo={getSemaforo(cac, cacObj, true)}
-              hint={cacObj !== null ? `Objetivo: ${formatCurrency(cacObj)}` : undefined}
-            />
-            <KpiCard
-              label="AOV nuevos"
-              value={formatCurrency(getValueAtMonth(kpi, "AOV_nuevos", activeMonth))}
-              mom={getMoMAtMonth(kpi, "AOV_nuevos", activeMonth)}
-            />
-            <KpiCard
-              label="Ventas Hugo"
-              value={formatNumber(getValueAtMonth(kpi, "ventas_hugo", activeMonth))}
-              mom={getMoMAtMonth(kpi, "ventas_hugo", activeMonth)}
-            />
+          </div>
+
+          {/* --- Fila 4 · Unit economics --- */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               label="LTV"
               value={formatCurrency(ltv)}
@@ -235,13 +244,25 @@ export default function ResumenPage() {
               hint={ltvObj !== null ? `Objetivo: ${formatCurrency(ltvObj)}` : undefined}
             />
             <KpiCard
-              label="LTV : CAC"
-              value={ltvCac !== null ? `${formatNumber(ltvCac)}x` : "—"}
+              label="CPL"
+              value={formatCurrency(cpl)}
+              mom={getMoMAtMonth(kpi, "CPL_ads", activeMonth)}
+              momIsGoodWhenPositive={false}
+              alerta={getAlertaOperativa("CPL_ads", cpl)}
             />
             <KpiCard
-              label="ROI marketing"
-              value={formatPercent(getValueAtMonth(kpi, "ROI_marketing", activeMonth))}
-              mom={getMoMAtMonth(kpi, "ROI_marketing", activeMonth)}
+              label="CAC"
+              value={formatCurrency(cac)}
+              mom={getMoMAtMonth(kpi, "CAC", activeMonth)}
+              momIsGoodWhenPositive={false}
+              alerta={getAlertaOperativa("CAC", cac)}
+            />
+            {/* CR_clientes se compara en fracción (0-1) y se muestra en %. */}
+            <KpiCard
+              label="CR"
+              value={formatPercent(cr)}
+              mom={getMoMAtMonth(kpi, "CR_clientes", activeMonth)}
+              alerta={getAlertaOperativa("CR_clientes", cr)}
             />
           </div>
 
@@ -268,9 +289,11 @@ export default function ResumenPage() {
             <ComposedBarLineChart
               data={pedidosAovRows}
               stacked
+              /* Recharts apila en orden de declaración: el primero abajo. Para
+                 que "nuevos" quede ARRIBA, va declarado último. */
               bars={[
-                { key: "pedidos_nuevos", label: "Pedidos nuevos", color: "#ffc400" },
                 { key: "pedidos_recurrentes", label: "Pedidos recurrentes", color: "#1e9e3a" },
+                { key: "pedidos_nuevos", label: "Pedidos nuevos", color: "#ffc400" },
               ]}
               line={{ key: "AOV", label: "AOV", color: "#143a24" }}
               barFormatter={(v) => formatNumber(v)}
