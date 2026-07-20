@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import clsx from "clsx";
-import { formatNumberDelta, formatPercentPoints } from "@/lib/kpiHelpers";
+import {
+  alertaToSemaforo,
+  formatNumberDelta,
+  formatPercentPoints,
+} from "@/lib/kpiHelpers";
 import type {
   AlertaColor,
   AlertaOperativa,
@@ -14,23 +18,28 @@ import type {
  *  n1 (principal)→ el `value` de una tarjeta normal. Es el comportamiento por defecto.
  *  n2 (secundario)→ `subValues`: valores subordinados dentro de la misma tarjeta,
  *                   debajo del n1 o a su derecha (`subValuesPosition`).
- *  n3 (comparativo)→ badge de variación (`mom` y/o `momDelta`) + `alerta` por umbrales.
+ *  n3 (comparativo)→ badge de variación (`mom` y/o `momDelta`) junto al valor.
  *                    El badge SIEMPRE dice contra qué período compara (`period`).
+ *
+ * `alerta` (por umbrales) va JUNTO AL TÍTULO y además pinta la pestañita/borde
+ * lateral con su color (azul/verde/amarillo/rojo), salvo que se pase un
+ * `semaforo` explícito distinto de "neutral".
  */
 
 const SEMAFORO_BG: Record<SemaforoColor, string> = {
   green: "bg-drc-green",
   yellow: "bg-drc-yellow",
   red: "bg-drc-red",
+  blue: "bg-drc-blue",
   neutral: "bg-drc-line",
 };
 
-/** Chips de alerta (n3). El texto usa los tonos "-deep" en amarillo y naranja:
- *  los de marca no contrastan lo suficiente sobre fondo claro. */
+/** Chips de alerta. El texto usa el tono "-deep" en amarillo: el de marca no
+ *  contrasta lo suficiente sobre fondo claro. */
 const ALERTA_CHIP: Record<AlertaColor, string> = {
+  blue: "text-drc-blue bg-drc-blue/10",
   green: "text-drc-green bg-drc-green/10",
   yellow: "text-drc-yellow-deep bg-drc-yellow/25",
-  orange: "text-drc-orange-deep bg-drc-orange/15",
   red: "text-drc-red bg-drc-red/10",
 };
 
@@ -79,7 +88,8 @@ export function KpiCard({
   /** Período contra el que compara el n3. Se pega al badge. */
   period?: PeriodLabel;
   momIsGoodWhenPositive?: boolean;
-  /** n3: alerta por umbrales (getAlertaOperativa). null/undefined → no pinta nada. */
+  /** Alerta por umbrales (getAlertaOperativa / getAlertaObjetivo). Se muestra
+   *  junto al título y pinta el borde lateral. null/undefined → no pinta nada. */
   alerta?: AlertaOperativa | null;
   /** n2: sub-valores subordinados al n1. */
   subValues?: KpiSubValue[];
@@ -105,20 +115,51 @@ export function KpiCard({
   if (hasDelta) badgeParts.push(formatDelta(momDelta as number));
   if (hasMom) badgeParts.push(formatPercentPoints(Math.abs(mom as number)));
 
+  // El borde/pestañita se pinta según la alerta (si hay) salvo que se pase un
+  // semáforo explícito distinto de "neutral": así una sola prop `alerta` maneja
+  // chip + color de borde de forma consistente (patrón de LTV/CPL/CAC/CR).
+  const effectiveSemaforo: SemaforoColor =
+    alerta && semaforo === "neutral" ? alertaToSemaforo(alerta.color) : semaforo;
+
   const toRight = subValuesPosition === "right";
+  // Los n2 escalan con el nivel de la tarjeta: en una titular (T) pesan más que
+  // en una normal, manteniendo la jerarquía T > n1 > n2 dentro de cada tamaño.
   const subs =
     subValues && subValues.length > 0 ? (
       <div className={clsx("flex flex-col gap-0.5", toRight && "items-end")}>
         {subValues.map((sv) => (
           <div key={sv.label} className="flex items-baseline gap-1.5">
-            <span className="text-[11px] text-drc-ink-soft">{sv.label}</span>
-            <span className="tabular text-sm font-medium text-drc-ink">
+            <span
+              className={clsx(
+                "text-drc-ink-soft",
+                isTitular ? "text-xs" : "text-[11px]"
+              )}
+            >
+              {sv.label}
+            </span>
+            <span
+              className={clsx(
+                "tabular font-medium text-drc-ink",
+                isTitular ? "text-base" : "text-sm"
+              )}
+            >
               {sv.value}
             </span>
           </div>
         ))}
       </div>
     ) : null;
+
+  const alertaChip = alerta ? (
+    <span
+      className={clsx(
+        "text-[10px] font-semibold uppercase tracking-wide rounded-full px-1.5 py-0.5 whitespace-nowrap",
+        ALERTA_CHIP[alerta.color]
+      )}
+    >
+      {alerta.texto}
+    </span>
+  ) : null;
 
   return (
     <div
@@ -131,12 +172,15 @@ export function KpiCard({
       <span
         className={clsx(
           "absolute left-0 top-0 h-full w-1.5",
-          SEMAFORO_BG[semaforo]
+          SEMAFORO_BG[effectiveSemaforo]
         )}
         aria-hidden
       />
-      <div className="text-xs uppercase tracking-wide text-drc-ink-soft">
-        {label}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs uppercase tracking-wide text-drc-ink-soft">
+          {label}
+        </div>
+        {alertaChip}
       </div>
 
       <div
@@ -166,16 +210,6 @@ export function KpiCard({
               >
                 {isPositive ? "▲" : "▼"} {badgeParts.join(" · ")}{" "}
                 <span className="opacity-70">{period}</span>
-              </span>
-            )}
-            {alerta && (
-              <span
-                className={clsx(
-                  "text-[10px] font-semibold uppercase tracking-wide rounded-full px-1.5 py-0.5 whitespace-nowrap",
-                  ALERTA_CHIP[alerta.color]
-                )}
-              >
-                {alerta.texto}
               </span>
             )}
           </div>

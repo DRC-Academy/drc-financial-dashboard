@@ -8,6 +8,10 @@
   --drc-yellow: #ffc400;
   --drc-orange: #e07a1f;
   --drc-red: #d6483c;
+  /* Azul: estado "EN OBJETIVO" del semáforo/alertas (el mejor estado, por
+     encima de "BIEN"=verde). No es color de marca; se suma a la paleta para
+     los umbrales operativos de CPL/CAC/CR/LTV. */
+  --drc-blue: #2563c9;
   /* Variantes oscuras SOLO para texto: el amarillo y el naranja de marca no
      llegan al contraste mínimo sobre fondo claro (chips de alerta n3). */
   --drc-yellow-deep: #8a6400;
@@ -32,6 +36,7 @@
   --color-drc-orange: var(--drc-orange);
   --color-drc-orange-deep: var(--drc-orange-deep);
   --color-drc-red: var(--drc-red);
+  --color-drc-blue: var(--drc-blue);
   --color-drc-bg: var(--drc-bg);
   --color-drc-ink: var(--drc-ink);
   --color-drc-ink-soft: var(--drc-ink-soft);

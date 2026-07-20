@@ -17,6 +17,7 @@ import {
   getDeltaAtMonth,
   getSemaforo,
   getAlertaOperativa,
+  getAlertaObjetivo,
   getRoiCanalLatest,
   formatCurrency,
   formatCurrencyDelta,
@@ -162,14 +163,20 @@ export default function ResumenPage() {
               ]}
             />
             <KpiCard
-              className="sm:col-span-2 lg:col-span-4"
+              className="lg:col-span-2"
               label="DRC Academy"
               value={formatCurrency(drcAcademy)}
               subValues={[
                 { label: "B2C", value: formatCurrency(b2c) },
                 { label: "B2B", value: formatCurrency(b2b) },
               ]}
-              subValuesPosition="right"
+            />
+            {/* ingresos_oritalk: negocio paralelo, al lado de DRC Academy. */}
+            <KpiCard
+              className="lg:col-span-2"
+              label="Oritalk"
+              value={formatCurrency(getValueAtMonth(kpi, "ingresos_oritalk", activeMonth))}
+              mom={getMoMAtMonth(kpi, "ingresos_oritalk", activeMonth)}
             />
 
             {/* --- Fila 2 · Pedidos --- */}
@@ -240,7 +247,7 @@ export default function ResumenPage() {
               label="LTV"
               value={formatCurrency(ltv)}
               mom={getMoMAtMonth(kpi, "LTV", activeMonth)}
-              semaforo={getSemaforo(ltv, ltvObj, false)}
+              alerta={getAlertaObjetivo(ltv, ltvObj, false)}
               hint={ltvObj !== null ? `Objetivo: ${formatCurrency(ltvObj)}` : undefined}
             />
             <KpiCard

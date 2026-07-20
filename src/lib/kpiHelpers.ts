@@ -106,7 +106,7 @@ export function getDeltaAtMonth(
   return null;
 }
 
-export type SemaforoColor = "green" | "yellow" | "red" | "neutral";
+export type SemaforoColor = "green" | "yellow" | "red" | "blue" | "neutral";
 
 /**
  * Compara un valor real contra su objetivo.
@@ -126,11 +126,22 @@ export function getSemaforo(
   return "red";
 }
 
-export type AlertaColor = "green" | "yellow" | "orange" | "red";
+/**
+ * Paleta de las alertas operativas, alineada 1:1 con SemaforoColor para que la
+ * "pestañita"/borde lateral de la tarjeta pueda pintarse del mismo color que el
+ * chip. Semántica de mejor → peor:
+ *   EN OBJETIVO → azul  ·  BIEN → verde  ·  MEJORABLE → amarillo  ·  PELIGRO → rojo
+ */
+export type AlertaColor = "blue" | "green" | "yellow" | "red";
 
 export interface AlertaOperativa {
   texto: string;
   color: AlertaColor;
+}
+
+/** Traduce el color de una alerta al color del semáforo (borde) de la tarjeta. */
+export function alertaToSemaforo(color: AlertaColor): SemaforoColor {
+  return color; // AlertaColor ⊂ SemaforoColor por diseño
 }
 
 /** Métricas con umbrales de alerta definidos. */
@@ -155,21 +166,48 @@ export function getAlertaOperativa(
 
   switch (key) {
     case "CPL_ads":
-      if (value < 12) return { texto: "EN OBJETIVO", color: "green" };
-      if (value < 15) return { texto: "BIEN", color: "yellow" };
-      if (value < 20) return { texto: "MEJORABLE", color: "orange" };
+      if (value < 12) return { texto: "EN OBJETIVO", color: "blue" };
+      if (value < 15) return { texto: "BIEN", color: "green" };
+      if (value < 20) return { texto: "MEJORABLE", color: "yellow" };
       return { texto: "PELIGRO", color: "red" };
     case "CAC":
-      if (value < 65) return { texto: "EN OBJETIVO", color: "green" };
-      if (value < 80) return { texto: "BIEN", color: "yellow" };
-      if (value < 120) return { texto: "MEJORABLE", color: "orange" };
+      if (value < 65) return { texto: "EN OBJETIVO", color: "blue" };
+      if (value < 80) return { texto: "BIEN", color: "green" };
+      if (value < 120) return { texto: "MEJORABLE", color: "yellow" };
       return { texto: "PELIGRO", color: "red" };
     case "CR_clientes":
       if (value < 0.2) return { texto: "PELIGRO", color: "red" };
-      if (value < 0.25) return { texto: "MEJORABLE", color: "orange" };
-      if (value < 0.28) return { texto: "BIEN", color: "yellow" };
-      return { texto: "EN OBJETIVO", color: "green" };
+      if (value < 0.25) return { texto: "MEJORABLE", color: "yellow" };
+      if (value < 0.28) return { texto: "BIEN", color: "green" };
+      return { texto: "EN OBJETIVO", color: "blue" };
   }
+}
+
+/**
+ * Alerta operativa a partir de la comparación real vs objetivo (para métricas
+ * que se juzgan contra su columna _obj, como LTV). Devuelve el mismo tipo que
+ * getAlertaOperativa para que la tarjeta la trate igual (chip junto al título +
+ * color de borde). `lowerIsBetter`: true si bajar es bueno (coste), false si
+ * subir es bueno (LTV).
+ *
+ * Umbrales alineados con getSemaforo (1 / 0.85) y ampliados a 4 estados:
+ *   ratio ≥ 1     → EN OBJETIVO (azul)
+ *   ratio ≥ 0.85  → BIEN (verde)
+ *   ratio ≥ 0.7   → MEJORABLE (amarillo)
+ *   ratio < 0.7   → PELIGRO (rojo)
+ */
+export function getAlertaObjetivo(
+  real: MetricValue,
+  objetivo: MetricValue,
+  lowerIsBetter: boolean
+): AlertaOperativa | null {
+  if (real === null || objetivo === null || objetivo === 0 || real === 0)
+    return null;
+  const ratio = lowerIsBetter ? objetivo / real : real / objetivo;
+  if (ratio >= 1) return { texto: "EN OBJETIVO", color: "blue" };
+  if (ratio >= 0.85) return { texto: "BIEN", color: "green" };
+  if (ratio >= 0.7) return { texto: "MEJORABLE", color: "yellow" };
+  return { texto: "PELIGRO", color: "red" };
 }
 
 /**
