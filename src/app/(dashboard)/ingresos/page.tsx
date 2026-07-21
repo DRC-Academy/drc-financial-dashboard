@@ -1,90 +1,147 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
+import { MonthSelect } from "@/components/ui/MonthSelect";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
-import { TrendChart } from "@/components/ui/TrendChart";
-import { BarComparison } from "@/components/ui/BarComparison";
+import { DonutChart } from "@/components/ui/DonutChart";
+import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { StackedBarChart } from "@/components/ui/StackedBarChart";
-import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
+import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
+import { MultiBarLineChart } from "@/components/ui/MultiBarLineChart";
+import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
-  filterKpi,
-  filterMonths,
-  DEFAULT_FILTER,
-  type DateFilter,
-} from "@/lib/dateFilter";
-import {
-  getLatest,
-  getMoM,
-  getSeries,
+  getValueAtMonth,
+  getMoMAtMonth,
+  getDeltaAtMonth,
   formatCurrency,
+  formatCurrencyDelta,
   formatNumber,
   formatPercent,
 } from "@/lib/kpiHelpers";
-import type { DBKpiData } from "@/types/kpi";
-import type { ProductoKpiData } from "@/lib/productoKpi";
+import type { DBKpiData, MetricValue } from "@/types/kpi";
+
+/** Colores de identidad por canal (mix de ingresos y ARPC), alineados con Captación. */
+const C = {
+  google: "#1e9e3a",
+  meta: "#eab308",
+  otros: "#94a3b8",
+  // Barras pastel + líneas del mismo hue, más oscuras, para el gráfico combinado.
+  googleBar: "#a9d5b5",
+  googleLine: "#14803a",
+  metaBar: "#ffe08a",
+  metaLine: "#b8860b",
+  otrosBar: "#cbd5e1",
+  otrosLine: "#64748b",
+};
+
+/** Resta a - b tratando null como 0, salvo que AMBOS sean null → null. */
+function subOrNull(a: MetricValue, b: MetricValue): MetricValue {
+  if (a === null && b === null) return null;
+  return (a ?? 0) - (b ?? 0);
+}
 
 export default function IngresosPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
     "/api/kpi",
     60_000
   );
-  const producto = useLiveData<ProductoKpiData>("/api/producto-kpi", 60_000);
-  const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
 
-  const kpiAll = data ?? { months: [], keys: [], data: {} };
-  const hasAnyData = kpiAll.months.length > 0;
-
-  const visibleMonths = useMemo(
-    () => filterMonths(kpiAll.months, filter),
-    [kpiAll, filter]
-  );
-  const kpi = useMemo(
-    () => filterKpi(kpiAll, visibleMonths),
-    [kpiAll, visibleMonths]
-  );
+  const kpi = data ?? { months: [], keys: [], data: {} };
   const months = kpi.months;
+  const hasAnyData = months.length > 0;
 
-  const ingresosNetos = getLatest(kpi, "ingresos_netos");
-  const ingresosB2C = getLatest(kpi, "ingresos_B2C_netos");
-  const ingresosB2B = getLatest(kpi, "ingresos_B2B");
-  const ingresosNuevos = getLatest(kpi, "ingresos_nuevos");
-  const ingresosAcumulados = getLatest(kpi, "ingresos_acumulados");
-  const stripeFeePct = getLatest(kpi, "%_stripe_fee");
-  const importeRefunds = getLatest(kpi, "importe_refunds");
-  const refundsNum = getLatest(kpi, "refunds_num");
-  const pedidos = getLatest(kpi, "pedidos");
-  const aov = getLatest(kpi, "AOV");
+  // Desplegable de mes → controla SOLO las tarjetas (igual que Resumen/Captación).
+  const [monthChoice, setMonthChoice] = useState<string>("");
+  const activeMonth =
+    monthChoice && months.includes(monthChoice)
+      ? monthChoice
+      : months[months.length - 1] ?? "";
 
-  const ingresosSeries = getSeries(kpi, "ingresos_netos");
-  const acumuladosSeries = getSeries(kpi, "ingresos_acumulados");
-  // stripe_fee viene en negativo (es un costo): mostramos la magnitud del fee.
-  const stripeFeeSeries = getSeries(kpi, "stripe_fee").map((p) => ({
-    month: p.month,
-    value: p.value === null ? null : Math.abs(p.value),
-  }));
+  // Rangos independientes por gráfico.
+  const [mixRange, setMixRange] = useState(0);
+  const [canalRange, setCanalRange] = useState(0);
+  const [pedRange, setPedRange] = useState(0);
+  const [aovRange, setAovRange] = useState(0);
 
-  const nuevosVsTotal = months.map((month) => ({
+  // ---- Fila 1 · Ingresos netos + MRR ----
+  const ingresosNetos = getValueAtMonth(kpi, "ingresos_netos", activeMonth);
+  const ingresosDelta = getDeltaAtMonth(kpi, "ingresos_netos", activeMonth);
+  const mrr = getValueAtMonth(kpi, "MRR", activeMonth);
+  const mrrDelta = getDeltaAtMonth(kpi, "MRR", activeMonth);
+
+  // ---- Dona · MRR como porción de ingresos_netos ----
+  const otrosIngresos = subOrNull(ingresosNetos, mrr);
+  const mrrSlices = [
+    { name: "MRR (recurrente)", value: mrr, color: C.google },
+    { name: "Otros ingresos", value: otrosIngresos, color: C.otros },
+  ];
+
+  // ---- Stripe / refunds (2 tarjetas n2) ----
+  // stripe_fee viene en negativo (es un coste): mostramos su magnitud.
+  const stripeFee = getValueAtMonth(kpi, "stripe_fee", activeMonth);
+  const stripeFeeAbs = stripeFee === null ? null : Math.abs(stripeFee);
+  const stripeFeePct = getValueAtMonth(kpi, "%_stripe_fee", activeMonth);
+  const importeRefunds = getValueAtMonth(kpi, "importe_refunds", activeMonth);
+  const refundsNum = getValueAtMonth(kpi, "refunds_num", activeMonth);
+
+  // ---- Pedidos + AOV + acumulado ----
+  const pedidos = getValueAtMonth(kpi, "pedidos", activeMonth);
+  const aov = getValueAtMonth(kpi, "AOV", activeMonth);
+  const aovNuevos = getValueAtMonth(kpi, "AOV_nuevos", activeMonth);
+  const ingresosAcumulados = getValueAtMonth(
+    kpi,
+    "ingresos_acumulados",
+    activeMonth
+  );
+
+  // ---- Gráfico · mix de ingresos por línea de negocio (apilado) ----
+  const mixRows = applyRange(months, mixRange).map((month) => ({
     month,
-    ingresos_nuevos: kpi.data[month]?.["ingresos_nuevos"] ?? null,
-    ingresos_netos: kpi.data[month]?.["ingresos_netos"] ?? null,
+    "B2C neto": kpi.data[month]?.["ingresos_B2C_netos"] ?? null,
+    B2B: kpi.data[month]?.["ingresos_B2B"] ?? null,
+    Oritalk: kpi.data[month]?.["ingresos_oritalk"] ?? null,
   }));
 
-  const pedidosComparison = months.map((month) => ({
+  // ---- Gráfico · ingresos por canal (apilado) + ARPC (líneas) ----
+  const canalRows = applyRange(months, canalRange).map((month) => {
+    const netos = kpi.data[month]?.["ingresos_netos"] ?? null;
+    const g = kpi.data[month]?.["ingresos_google"] ?? null;
+    const m = kpi.data[month]?.["ingresos_meta"] ?? null;
+    // "ingresos_otros" no existe en DB_KPI: es el resto no atribuido a Google/Meta.
+    const otros = netos === null ? null : (netos ?? 0) - (g ?? 0) - (m ?? 0);
+    const vG = kpi.data[month]?.["ventas_google"] ?? null;
+    const vM = kpi.data[month]?.["ventas_meta"] ?? null;
+    const vOtros = kpi.data[month]?.["ventas_otros"] ?? null;
+    return {
+      month,
+      ingresos_google: g,
+      ingresos_meta: m,
+      ingresos_otros: otros,
+      // ARPC = ingresos / ventas de ese canal.
+      ARPC_google: g !== null && vG ? g / vG : null,
+      ARPC_meta: m !== null && vM ? m / vM : null,
+      ARPC_otros: otros !== null && vOtros ? otros / vOtros : null,
+    };
+  });
+
+  // ---- Gráfico · pedidos nuevos vs recurrentes (apilado) + recurrent_rate ----
+  const pedidosRows = applyRange(months, pedRange).map((month) => ({
     month,
     pedidos_nuevos: kpi.data[month]?.["pedidos_nuevos"] ?? null,
     pedidos_recurrentes: kpi.data[month]?.["pedidos_recurrentes"] ?? null,
+    recurrent_rate: kpi.data[month]?.["recurrent_rate"] ?? null,
   }));
 
-  const productoData = producto.data ?? { months: [], productos: [], data: {} };
-  const productoMonths = filterMonths(productoData.months, filter);
-  const productoRows = productoMonths.map((month) => ({
+  // ---- Gráfico · AOV vs AOV nuevos ----
+  const aovRows = applyRange(months, aovRange).map((month) => ({
     month,
-    ...(productoData.data[month] ?? {}),
+    AOV: kpi.data[month]?.["AOV"] ?? null,
+    AOV_nuevos: kpi.data[month]?.["AOV_nuevos"] ?? null,
   }));
 
   return (
@@ -92,16 +149,18 @@ export default function IngresosPage() {
       <PageHeader
         eyebrow="03 · Ingresos"
         title="Cuánto entra, y de dónde"
-        description="Ingresos netos, mix de producto y composición nuevos vs. recurrentes."
-        right={<LiveIndicator fetchedAt={fetchedAt} error={error} />}
-        filter={
-          hasAnyData ? (
-            <DateRangeFilter
-              months={kpiAll.months}
-              filter={filter}
-              onChange={setFilter}
-            />
-          ) : undefined
+        description="Elegí el mes para las tarjetas; cada gráfico tiene su propio rango temporal."
+        right={
+          <div className="flex flex-wrap items-center gap-3">
+            {hasAnyData && (
+              <MonthSelect
+                months={months}
+                value={activeMonth}
+                onChange={setMonthChoice}
+              />
+            )}
+            <LiveIndicator fetchedAt={fetchedAt} error={error} />
+          </div>
         }
       />
 
@@ -112,116 +171,160 @@ export default function IngresosPage() {
 
       {hasAnyData && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* --- Fila 1 · Ingresos netos y MRR (dos titulares) --- */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <KpiCard
+              size="titular"
               label="Ingresos netos"
               value={formatCurrency(ingresosNetos)}
-              mom={getMoM(kpi, "ingresos_netos")}
+              mom={getMoMAtMonth(kpi, "ingresos_netos", activeMonth)}
+              subValues={[
+                {
+                  label: "vs. mes anterior",
+                  value: formatCurrencyDelta(ingresosDelta),
+                },
+              ]}
             />
             <KpiCard
-              label="B2C netos"
-              value={formatCurrency(ingresosB2C)}
-              mom={getMoM(kpi, "ingresos_B2C_netos")}
+              size="titular"
+              label="MRR"
+              value={formatCurrency(mrr)}
+              mom={getMoMAtMonth(kpi, "MRR", activeMonth)}
+              subValues={[
+                { label: "vs. mes anterior", value: formatCurrencyDelta(mrrDelta) },
+              ]}
             />
-            <KpiCard
-              label="B2B"
-              value={formatCurrency(ingresosB2B)}
-              mom={getMoM(kpi, "ingresos_B2B")}
+          </div>
+
+          {/* --- Dona · MRR como % de ingresos netos --- */}
+          <Panel
+            title={`MRR sobre ingresos netos — ${activeMonth}`}
+            description="Qué porción de los ingresos netos del mes es recurrente (MRR) frente al resto."
+            className="lg:max-w-2xl"
+          >
+            <DonutChart
+              data={mrrSlices}
+              valueFormatter={(v) => formatCurrency(v)}
+              centerLabel="ingresos"
             />
+          </Panel>
+
+          {/* --- Fila · Stripe + refunds (2 tarjetas n2) --- */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <KpiCard
-              label="Ingresos nuevos"
-              value={formatCurrency(ingresosNuevos)}
-              mom={getMoM(kpi, "ingresos_nuevos")}
-            />
-            <KpiCard
-              label="Acumulado"
-              value={formatCurrency(ingresosAcumulados)}
-            />
-            <KpiCard
-              label="Fee Stripe"
-              value={stripeFeePct !== null ? formatPercent(stripeFeePct) : "—"}
+              label="Fee de Stripe"
+              value={formatCurrency(stripeFeeAbs)}
               momIsGoodWhenPositive={false}
+              subValues={[
+                { label: "% s/ ingresos", value: formatPercent(stripeFeePct) },
+              ]}
             />
             <KpiCard
               label="Importe refunds"
               value={formatCurrency(importeRefunds)}
-              mom={getMoM(kpi, "importe_refunds")}
               momIsGoodWhenPositive={false}
+              subValues={[
+                { label: "Nº refunds", value: formatNumber(refundsNum) },
+              ]}
             />
-            <KpiCard
-              label="Nº refunds"
-              value={formatNumber(refundsNum)}
-              mom={getMoM(kpi, "refunds_num")}
-              momIsGoodWhenPositive={false}
-            />
+          </div>
+
+          {/* --- Fila · Pedidos + AOV + acumulado --- */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               label="Pedidos"
               value={formatNumber(pedidos)}
-              mom={getMoM(kpi, "pedidos")}
+              mom={getMoMAtMonth(kpi, "pedidos", activeMonth)}
             />
-            <KpiCard label="AOV" value={formatCurrency(aov)} mom={getMoM(kpi, "AOV")} />
+            <KpiCard
+              label="AOV"
+              value={formatCurrency(aov)}
+              mom={getMoMAtMonth(kpi, "AOV", activeMonth)}
+            />
+            <KpiCard
+              label="AOV nuevos"
+              value={formatCurrency(aovNuevos)}
+              mom={getMoMAtMonth(kpi, "AOV_nuevos", activeMonth)}
+            />
+            <KpiCard
+              label="Ingresos acumulados"
+              value={formatCurrency(ingresosAcumulados)}
+            />
           </div>
 
-          <Panel title="Ingresos netos en el tiempo">
-            <TrendChart
-              data={ingresosSeries}
-              color="#1e9e3a"
-              valueFormatter={(v) => formatCurrency(v)}
-            />
-          </Panel>
-
-          <div className="grid lg:grid-cols-2 gap-4">
-            <Panel title="Nuevos vs. total" description="Ingresos nuevos frente al total del mes">
-              <BarComparison
-                data={nuevosVsTotal}
-                series={[
-                  { key: "ingresos_nuevos", label: "Nuevos", color: "#ffc400" },
-                  { key: "ingresos_netos", label: "Total neto", color: "#1e9e3a" },
-                ]}
-                valueFormatter={(v) => formatCurrency(v)}
-              />
-            </Panel>
-            <Panel title="Pedidos: nuevos vs. recurrentes">
-              <BarComparison
-                data={pedidosComparison}
-                series={[
-                  { key: "pedidos_nuevos", label: "Nuevos", color: "#ffc400" },
-                  { key: "pedidos_recurrentes", label: "Recurrentes", color: "#1e9e3a" },
-                ]}
-              />
-            </Panel>
-          </div>
-
+          {/* --- Gráfico · mix de ingresos por línea de negocio --- */}
           <Panel
-            title="Mix de producto"
-            description='Evolución mensual por plan/horas, leído de la hoja "KPI Producto"'
+            title="Mix de ingresos por línea de negocio"
+            description="Composición mensual apilada: B2C neto, B2B y Oritalk."
+            action={<RangeFilter value={mixRange} onChange={setMixRange} />}
           >
             <StackedBarChart
-              data={productoRows}
-              keys={productoData.productos}
+              data={mixRows}
+              keys={["B2C neto", "B2B", "Oritalk"]}
               valueFormatter={(v) => formatCurrency(v)}
             />
           </Panel>
 
-          <div className="grid lg:grid-cols-2 gap-4">
-            <Panel title="Ingresos acumulados">
-              <TrendChart
-                data={acumuladosSeries}
-                color="#143a24"
-                valueFormatter={(v) => formatCurrency(v)}
-              />
-            </Panel>
-            <Panel
-              title="Fee de Stripe en el tiempo"
-              description="Comisión de Stripe por mes (magnitud del costo)"
-            >
-              <TrendChart
-                data={stripeFeeSeries}
-                color="#d6483c"
-                valueFormatter={(v) => formatCurrency(v)}
-              />
-            </Panel>
-          </div>
+          {/* --- Gráfico · ingresos por canal + ARPC --- */}
+          <Panel
+            title="Ingresos por canal y ARPC"
+            description="Barras apiladas: ingresos por canal (Google, Meta y otros = resto no atribuido, eje izq.). Líneas: ARPC de cada canal (ingresos/ventas, €, eje der.)."
+            action={<RangeFilter value={canalRange} onChange={setCanalRange} />}
+          >
+            <MultiBarLineChart
+              data={canalRows}
+              stacked
+              bars={[
+                { key: "ingresos_google", label: "Ingresos Google", color: C.googleBar },
+                { key: "ingresos_meta", label: "Ingresos Meta", color: C.metaBar },
+                { key: "ingresos_otros", label: "Ingresos otros", color: C.otrosBar },
+              ]}
+              lines={[
+                { key: "ARPC_google", label: "ARPC Google", color: C.googleLine },
+                { key: "ARPC_meta", label: "ARPC Meta", color: C.metaLine },
+                { key: "ARPC_otros", label: "ARPC otros", color: C.otrosLine },
+              ]}
+              barFormatter={(v) => formatCurrency(v)}
+              lineFormatter={(v) => formatCurrency(v)}
+            />
+          </Panel>
+
+          {/* --- Gráfico · pedidos nuevos vs recurrentes + recurrent_rate --- */}
+          <Panel
+            title="Pedidos: nuevos vs. recurrentes"
+            description="Pedidos nuevos + recurrentes (apilados, eje izq.) con la tasa de recurrencia como línea (%) sobre eje derecho."
+            action={<RangeFilter value={pedRange} onChange={setPedRange} />}
+          >
+            <ComposedBarLineChart
+              data={pedidosRows}
+              stacked
+              /* Recharts apila en orden de declaración: el primero abajo. Para
+                 que "nuevos" quede ARRIBA, va declarado último. */
+              bars={[
+                { key: "pedidos_recurrentes", label: "Pedidos recurrentes", color: "#1e9e3a" },
+                { key: "pedidos_nuevos", label: "Pedidos nuevos", color: "#ffc400" },
+              ]}
+              line={{ key: "recurrent_rate", label: "Tasa de recurrencia", color: "#143a24" }}
+              barFormatter={(v) => formatNumber(v)}
+              lineFormatter={(v) => formatPercent(v)}
+            />
+          </Panel>
+
+          {/* --- Gráfico · AOV vs AOV nuevos --- */}
+          <Panel
+            title="Ticket medio (AOV) vs. AOV de nuevos"
+            description="Evolución mensual del ticket medio general y el de clientes nuevos, ambos en €."
+            action={<RangeFilter value={aovRange} onChange={setAovRange} />}
+          >
+            <MultiTrendChart
+              data={aovRows}
+              series={[
+                { key: "AOV", label: "AOV", color: "#1e9e3a" },
+                { key: "AOV_nuevos", label: "AOV nuevos", color: "#ffc400" },
+              ]}
+              valueFormatter={(v) => formatCurrency(v)}
+            />
+          </Panel>
         </div>
       )}
     </>

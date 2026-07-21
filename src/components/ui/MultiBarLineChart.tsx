@@ -25,19 +25,24 @@ interface SeriesDef {
 }
 
 /**
- * Varias barras (agrupadas) sobre el eje izquierdo + varias líneas sobre el eje
- * derecho. Extiende ComposedBarLineChart (que sólo admite UNA línea) para los
- * casos "N canales de barras + N métricas de coste como líneas" (leads por
- * canal + CPL_google/CPL_meta; ventas por canal + CAC_google/CAC_meta).
+ * Varias barras (agrupadas o apiladas) sobre el eje izquierdo + varias líneas
+ * sobre el eje derecho. Extiende ComposedBarLineChart (que sólo admite UNA
+ * línea) para los casos "N canales de barras + N métricas de coste como líneas"
+ * (leads por canal + CPL_google/CPL_meta; ventas por canal + CAC_google/CAC_meta;
+ * ingresos por canal apilados + ARPC de cada canal).
  *
- * Eje dual, sí: las barras (conteos) y las líneas (€) tienen escalas distintas.
+ * Eje dual, sí: las barras (conteos/€) y las líneas (€) tienen escalas distintas.
  * Cada línea usa un tono más oscuro del mismo hue que su barra para dejar clara
  * la correspondencia barra↔línea por canal.
+ *
+ * `stacked` apila las barras (stackId común) en vez de agruparlas — útil cuando
+ * las barras son partes de un total (mix de ingresos por canal).
  */
 export function MultiBarLineChart({
   data,
   bars,
   lines,
+  stacked = false,
   height = 280,
   barFormatter,
   lineFormatter,
@@ -45,6 +50,7 @@ export function MultiBarLineChart({
   data: MultiBarLinePoint[];
   bars: SeriesDef[];
   lines: SeriesDef[];
+  stacked?: boolean;
   height?: number;
   barFormatter?: (v: number) => string;
   lineFormatter?: (v: number) => string;
@@ -102,14 +108,21 @@ export function MultiBarLineChart({
           }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        {bars.map((b) => (
+        {bars.map((b, i) => (
           <Bar
             key={b.key}
             yAxisId="left"
             dataKey={b.key}
             name={b.label}
             fill={b.color}
-            radius={[4, 4, 0, 0]}
+            stackId={stacked ? "a" : undefined}
+            radius={
+              stacked
+                ? i === bars.length - 1
+                  ? [4, 4, 0, 0]
+                  : undefined
+                : [4, 4, 0, 0]
+            }
           />
         ))}
         {lines.map((l) => (
