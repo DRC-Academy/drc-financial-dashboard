@@ -25,11 +25,14 @@ const PALETTE = [
 export function StackedBarChart({
   data,
   keys,
+  colors,
   height = 260,
   valueFormatter,
 }: {
   data: Record<string, string | number | null>[];
   keys: string[];
+  /** Colores por serie (mismo orden que `keys`). Si falta, cae a PALETTE. */
+  colors?: string[];
   height?: number;
   valueFormatter?: (v: number) => string;
 }) {
@@ -37,6 +40,8 @@ export function StackedBarChart({
     keys.some((k) => row[k] !== null && row[k] !== undefined)
   );
   if (!hasData || keys.length === 0) return <EmptyState />;
+
+  const colorAt = (i: number) => colors?.[i] ?? PALETTE[i % PALETTE.length];
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -70,7 +75,7 @@ export function StackedBarChart({
             key={k}
             dataKey={k}
             stackId="a"
-            fill={PALETTE[i % PALETTE.length]}
+            fill={colorAt(i)}
             radius={i === keys.length - 1 ? [4, 4, 0, 0] : undefined}
           />
         ))}

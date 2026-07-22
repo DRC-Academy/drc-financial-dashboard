@@ -11,7 +11,6 @@ import { DonutChart } from "@/components/ui/DonutChart";
 import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { StackedBarChart } from "@/components/ui/StackedBarChart";
 import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
-import { MultiBarLineChart } from "@/components/ui/MultiBarLineChart";
 import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -25,18 +24,15 @@ import {
 } from "@/lib/kpiHelpers";
 import type { DBKpiData, MetricValue } from "@/types/kpi";
 
-/** Colores de identidad por canal (mix de ingresos y ARPC), alineados con Captación. */
+/** Colores de identidad por canal, alineados con Captación. */
 const C = {
   google: "#1e9e3a",
   meta: "#eab308",
   otros: "#94a3b8",
-  // Barras pastel + líneas del mismo hue, más oscuras, para el gráfico combinado.
+  // Barras pastel del mismo hue para el gráfico de ingresos por canal.
   googleBar: "#a9d5b5",
-  googleLine: "#14803a",
   metaBar: "#ffe08a",
-  metaLine: "#b8860b",
   otrosBar: "#cbd5e1",
-  otrosLine: "#64748b",
 };
 
 /** Resta a - b tratando null como 0, salvo que AMBOS sean null → null. */
@@ -107,25 +103,18 @@ export default function IngresosPage() {
     Oritalk: kpi.data[month]?.["ingresos_oritalk"] ?? null,
   }));
 
-  // ---- Gráfico · ingresos por canal (apilado) + ARPC (líneas) ----
+  // ---- Gráfico · ingresos por canal (apilado) ----
   const canalRows = applyRange(months, canalRange).map((month) => {
     const netos = kpi.data[month]?.["ingresos_netos"] ?? null;
     const g = kpi.data[month]?.["ingresos_google"] ?? null;
     const m = kpi.data[month]?.["ingresos_meta"] ?? null;
     // "ingresos_otros" no existe en DB_KPI: es el resto no atribuido a Google/Meta.
     const otros = netos === null ? null : (netos ?? 0) - (g ?? 0) - (m ?? 0);
-    const vG = kpi.data[month]?.["ventas_google"] ?? null;
-    const vM = kpi.data[month]?.["ventas_meta"] ?? null;
-    const vOtros = kpi.data[month]?.["ventas_otros"] ?? null;
     return {
       month,
       ingresos_google: g,
       ingresos_meta: m,
       ingresos_otros: otros,
-      // ARPC = ingresos / ventas de ese canal.
-      ARPC_google: g !== null && vG ? g / vG : null,
-      ARPC_meta: m !== null && vM ? m / vM : null,
-      ARPC_otros: otros !== null && vOtros ? otros / vOtros : null,
     };
   });
 
@@ -171,43 +160,45 @@ export default function IngresosPage() {
 
       {hasAnyData && (
         <div className="space-y-6">
-          {/* --- Fila 1 · Ingresos netos y MRR (dos titulares) --- */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <KpiCard
-              size="titular"
-              label="Ingresos netos"
-              value={formatCurrency(ingresosNetos)}
-              mom={getMoMAtMonth(kpi, "ingresos_netos", activeMonth)}
-              subValues={[
-                {
-                  label: "vs. mes anterior",
-                  value: formatCurrencyDelta(ingresosDelta),
-                },
-              ]}
-            />
-            <KpiCard
-              size="titular"
-              label="MRR"
-              value={formatCurrency(mrr)}
-              mom={getMoMAtMonth(kpi, "MRR", activeMonth)}
-              subValues={[
-                { label: "vs. mes anterior", value: formatCurrencyDelta(mrrDelta) },
-              ]}
-            />
-          </div>
+          {/* --- Fila 1 · Titulares (en columna) al lado de la dona --- */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+            {/* Los dos titulares apilados uno encima del otro. */}
+            <div className="flex flex-col gap-4">
+              <KpiCard
+                size="titular"
+                label="Ingresos netos"
+                value={formatCurrency(ingresosNetos)}
+                mom={getMoMAtMonth(kpi, "ingresos_netos", activeMonth)}
+                subValues={[
+                  {
+                    label: "vs. mes anterior",
+                    value: formatCurrencyDelta(ingresosDelta),
+                  },
+                ]}
+              />
+              <KpiCard
+                size="titular"
+                label="MRR"
+                value={formatCurrency(mrr)}
+                mom={getMoMAtMonth(kpi, "MRR", activeMonth)}
+                subValues={[
+                  { label: "vs. mes anterior", value: formatCurrencyDelta(mrrDelta) },
+                ]}
+              />
+            </div>
 
-          {/* --- Dona · MRR como % de ingresos netos --- */}
-          <Panel
-            title={`MRR sobre ingresos netos — ${activeMonth}`}
-            description="Qué porción de los ingresos netos del mes es recurrente (MRR) frente al resto."
-            className="lg:max-w-2xl"
-          >
-            <DonutChart
-              data={mrrSlices}
-              valueFormatter={(v) => formatCurrency(v)}
-              centerLabel="ingresos"
-            />
-          </Panel>
+            {/* --- Dona · MRR como % de ingresos netos --- */}
+            <Panel
+              title={`MRR sobre ingresos netos — ${activeMonth}`}
+              description="Qué porción de los ingresos netos del mes es recurrente (MRR) frente al resto."
+            >
+              <DonutChart
+                data={mrrSlices}
+                valueFormatter={(v) => formatCurrency(v)}
+                centerLabel="ingresos"
+              />
+            </Panel>
+          </div>
 
           {/* --- Fila · Stripe + refunds (2 tarjetas n2) --- */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -265,27 +256,17 @@ export default function IngresosPage() {
             />
           </Panel>
 
-          {/* --- Gráfico · ingresos por canal + ARPC --- */}
+          {/* --- Gráfico · ingresos por canal --- */}
           <Panel
-            title="Ingresos por canal y ARPC"
-            description="Barras apiladas: ingresos por canal (Google, Meta y otros = resto no atribuido, eje izq.). Líneas: ARPC de cada canal (ingresos/ventas, €, eje der.)."
+            title="Ingresos por canal"
+            description="Barras apiladas: ingresos por canal (Google, Meta y otros = resto no atribuido a Google/Meta)."
             action={<RangeFilter value={canalRange} onChange={setCanalRange} />}
           >
-            <MultiBarLineChart
+            <StackedBarChart
               data={canalRows}
-              stacked
-              bars={[
-                { key: "ingresos_google", label: "Ingresos Google", color: C.googleBar },
-                { key: "ingresos_meta", label: "Ingresos Meta", color: C.metaBar },
-                { key: "ingresos_otros", label: "Ingresos otros", color: C.otrosBar },
-              ]}
-              lines={[
-                { key: "ARPC_google", label: "ARPC Google", color: C.googleLine },
-                { key: "ARPC_meta", label: "ARPC Meta", color: C.metaLine },
-                { key: "ARPC_otros", label: "ARPC otros", color: C.otrosLine },
-              ]}
-              barFormatter={(v) => formatCurrency(v)}
-              lineFormatter={(v) => formatCurrency(v)}
+              keys={["ingresos_google", "ingresos_meta", "ingresos_otros"]}
+              colors={[C.googleBar, C.metaBar, C.otrosBar]}
+              valueFormatter={(v) => formatCurrency(v)}
             />
           </Panel>
 
