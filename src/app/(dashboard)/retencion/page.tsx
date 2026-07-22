@@ -4,92 +4,123 @@ import { useMemo, useState } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
+import { MonthSelect } from "@/components/ui/MonthSelect";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
-import { TrendChart } from "@/components/ui/TrendChart";
+import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
+import { ComposedBarAreaChart } from "@/components/ui/ComposedBarAreaChart";
 import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { CohortHeatmap } from "@/components/ui/CohortHeatmap";
 import { RankedBars } from "@/components/ui/RankedBars";
-import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
+import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
-  filterKpi,
-  filterMonths,
-  monthLabelToYYYYMM,
-  monthsBounds,
-  DEFAULT_FILTER,
-  type DateFilter,
-} from "@/lib/dateFilter";
-import {
-  getLatest,
-  getLatestAbs,
-  getMoM,
-  getMoMAbs,
-  getLtvCacSeries,
+  getValueAtMonth,
+  getMoMAtMonth,
+  getMoMAbsAtMonth,
+  getDeltaAtMonth,
+  getLtvCacAtMonth,
   formatCurrency,
   formatNumber,
+  formatNumberDelta,
   formatPercent,
 } from "@/lib/kpiHelpers";
-import type { CancelacionRow, CohortData, CuponRow, DBKpiData } from "@/types/kpi";
+import type { SemaforoColor } from "@/lib/kpiHelpers";
+import type {
+  CancelacionRow,
+  CohortData,
+  CuponRow,
+  DBKpiData,
+  MetricValue,
+} from "@/types/kpi";
+
+/**
+ * Semáforo del ratio LTV:CAC: sano (≥3x) → verde; a medio camino (≥2x) →
+ * amarillo; por debajo de 2x → rojo (cuanto más lejos del objetivo de 3x, peor).
+ */
+function ltvCacSemaforo(ratio: MetricValue): SemaforoColor {
+  if (ratio === null) return "neutral";
+  if (ratio >= 3) return "green";
+  if (ratio >= 2) return "yellow";
+  return "red";
+}
 
 export default function RetencionPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
     "/api/kpi",
     60_000
   );
-  const cohortes = useLiveData<CohortData>(
-    "/api/cohortes?tipo=clientes",
-    60_000
-  );
+  const cohortes = useLiveData<CohortData>("/api/cohortes?tipo=clientes", 60_000);
   const cancelaciones = useLiveData<CancelacionRow[]>(
     "/api/relaciones?tipo=cancelaciones",
     60_000
   );
   const cupones = useLiveData<CuponRow[]>("/api/relaciones?tipo=cupones", 60_000);
-  const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
 
-  const kpiAll = data ?? { months: [], keys: [], data: {} };
-  const hasAnyData = kpiAll.months.length > 0;
+  const kpi = data ?? { months: [], keys: [], data: {} };
+  const months = kpi.months;
+  const hasAnyData = months.length > 0;
 
-  const visibleMonths = useMemo(
-    () => filterMonths(kpiAll.months, filter),
-    [kpiAll, filter]
-  );
-  const kpi = useMemo(
-    () => filterKpi(kpiAll, visibleMonths),
-    [kpiAll, visibleMonths]
-  );
+  // Desplegable de mes → controla SOLO las tarjetas (igual que Resumen/Ingresos).
+  const [monthChoice, setMonthChoice] = useState<string>("");
+  const activeMonth =
+    monthChoice && months.includes(monthChoice)
+      ? monthChoice
+      : months[months.length - 1] ?? "";
 
-  const clientesActivos = getLatest(kpi, "clientes_activos");
-  const clientesNuevos = getLatest(kpi, "clientes_nuevos");
-  const clientesPerdidos = getLatestAbs(kpi, "clientes_perdidos");
-  const retention = getLatest(kpi, "retention_rate");
-  const churn3m = getLatest(kpi, "clientes_churn_3m");
-  const arpc = getLatest(kpi, "ARPC");
-  const ltvChurn = getLatest(kpi, "LTV_churn");
-  const permanencia = getLatest(kpi, "permanencia");
+  // Rangos independientes por gráfico.
+  const [movRange, setMovRange] = useState(0);
+  const [permRange, setPermRange] = useState(0);
+  const [churnRange, setChurnRange] = useState(0);
+  const [arpcLtvRange, setArpcLtvRange] = useState(0);
 
-  const ltvCacSeries = getLtvCacSeries(kpi);
+  // Rango de cohortes del heatmap (por etiqueta de cohorte; "" = extremo).
+  const [cohortFrom, setCohortFrom] = useState<string>("");
+  const [cohortTo, setCohortTo] = useState<string>("");
 
-  // El filtro global también acota qué cohortes se muestran en el heatmap:
-  // sólo las cohortes cuyo mes de inicio cae dentro de la ventana visible.
-  const cohortesFiltradas = useMemo(() => {
-    const cd = cohortes.data ?? { cohorts: [], monthsOfLife: [] };
-    // "Todo" (quick con 0): sin recorte de cohortes.
-    if (filter.kind === "quick" && (!filter.months || filter.months <= 0)) {
-      return cd;
-    }
-    const { min, max } = monthsBounds(visibleMonths);
-    const cohorts = cd.cohorts.filter((c) => {
-      const ym = monthLabelToYYYYMM(c.cohort);
-      if (ym === null) return true;
-      if (min && ym < min) return false;
-      if (max && ym > max) return false;
-      return true;
-    });
-    return { cohorts, monthsOfLife: cd.monthsOfLife };
-  }, [cohortes.data, filter, visibleMonths]);
+  // ---- Tarjetas (mes seleccionado) ----
+  const suscActivas = getValueAtMonth(kpi, "suscripciones_activas", activeMonth);
+  const suscPerdidasRaw = getValueAtMonth(kpi, "suscripciones_perdidas", activeMonth);
+  // suscripciones_perdidas viene en negativo (convención de "pérdida"): magnitud.
+  const suscPerdidas = suscPerdidasRaw === null ? null : Math.abs(suscPerdidasRaw);
 
+  // permanencia puede venir como error de fórmula ("#VALUE!") en el Sheet; el
+  // parseo numérico ya lo convierte a null, así que aquí sólo lo tratamos como
+  // "sin dato" sin lógica extra.
+  const permanencia = getValueAtMonth(kpi, "permanencia", activeMonth);
+
+  const ltvCac = getLtvCacAtMonth(kpi, activeMonth);
+
+  // ---- Gráfico C4 · clientes nuevos/recurrentes + retención ----
+  const movRows = applyRange(months, movRange).map((month) => ({
+    month,
+    clientes_nuevos: kpi.data[month]?.["clientes_nuevos"] ?? null,
+    clientes_recurrentes: kpi.data[month]?.["clientes_recurrentes"] ?? null,
+    retention_rate: kpi.data[month]?.["retention_rate"] ?? null,
+  }));
+
+  // ---- Gráfico C5 · permanencia (misma nota de #VALUE! → null) ----
+  const permRows = applyRange(months, permRange).map((month) => ({
+    month,
+    permanencia: kpi.data[month]?.["permanencia"] ?? null,
+    permanencia_perdidos: kpi.data[month]?.["permanencia_perdidos"] ?? null,
+  }));
+
+  // ---- Gráfico C6 · churn (clientes y MRR, ambos como %) ----
+  const churnRows = applyRange(months, churnRange).map((month) => ({
+    month,
+    clientes_churn: kpi.data[month]?.["clientes_churn"] ?? null,
+    MRR_churn: kpi.data[month]?.["MRR_churn"] ?? null,
+  }));
+
+  // ---- Gráfico C7 · ARPC (barras) + LTV (área) ----
+  const arpcLtvRows = applyRange(months, arpcLtvRange).map((month) => ({
+    month,
+    ARPC: kpi.data[month]?.["ARPC"] ?? null,
+    LTV: kpi.data[month]?.["LTV"] ?? null,
+  }));
+
+  // ---- Motivos de cancelación (se deja tal cual) ----
   const motivos = useMemo(() => {
     const rows = cancelaciones.data ?? [];
     const counts = new Map<string, number>();
@@ -102,32 +133,50 @@ export default function RetencionPage() {
 
   const cuponRows = cupones.data ?? [];
 
-  // clientes_perdidos se guarda en negativo: lo mostramos en magnitud para poder
-  // compararlo contra clientes_nuevos y leer el balance neto mes a mes.
-  const nuevosVsPerdidos = kpi.months.map((month) => {
-    const perdidos = kpi.data[month]?.["clientes_perdidos"] ?? null;
-    return {
-      month,
-      clientes_nuevos: kpi.data[month]?.["clientes_nuevos"] ?? null,
-      clientes_perdidos: perdidos === null ? null : Math.abs(perdidos),
-    };
-  });
+  // ---- Heatmap C8 · rango de cohortes + vista de diferencia ----
+  const cohortList = cohortes.data?.cohorts ?? [];
+  const monthsOfLife = cohortes.data?.monthsOfLife ?? [];
+
+  const cohortDiff = useMemo<CohortData>(() => {
+    if (cohortList.length === 0) return { cohorts: [], monthsOfLife };
+    let a = cohortFrom ? cohortList.findIndex((c) => c.cohort === cohortFrom) : 0;
+    let b = cohortTo ? cohortList.findIndex((c) => c.cohort === cohortTo) : cohortList.length - 1;
+    if (a < 0) a = 0;
+    if (b < 0) b = cohortList.length - 1;
+    if (a > b) [a, b] = [b, a];
+
+    const cohorts = cohortList.slice(a, b + 1).map((c) => ({
+      cohort: c.cohort,
+      // Diferencia respecto al mes de vida anterior (cuántos se ganan/pierden de
+      // un mes de vida al siguiente). m0 es la base → sin "anterior" → null (celda
+      // vacía). Si falta algún extremo, la celda queda sin dato.
+      values: c.values.map((v, i) => {
+        if (i === 0) return null;
+        const prev = c.values[i - 1];
+        if (v === null || prev === null) return null;
+        return v - prev;
+      }),
+    }));
+    return { cohorts, monthsOfLife };
+  }, [cohortList, monthsOfLife, cohortFrom, cohortTo]);
 
   return (
     <>
       <PageHeader
         eyebrow="04 · Retención"
         title="Quién se queda, quién se va, y por qué"
-        description="Cohortes, motivos de cancelación e impacto de cupones de retención."
-        right={<LiveIndicator fetchedAt={fetchedAt} error={error} />}
-        filter={
-          hasAnyData ? (
-            <DateRangeFilter
-              months={kpiAll.months}
-              filter={filter}
-              onChange={setFilter}
-            />
-          ) : undefined
+        description="Elegí el mes para las tarjetas; cada gráfico tiene su propio rango temporal."
+        right={
+          <div className="flex flex-wrap items-center gap-3">
+            {hasAnyData && (
+              <MonthSelect
+                months={months}
+                value={activeMonth}
+                onChange={setMonthChoice}
+              />
+            )}
+            <LiveIndicator fetchedAt={fetchedAt} error={error} />
+          </div>
         }
       />
 
@@ -138,108 +187,218 @@ export default function RetencionPage() {
 
       {hasAnyData && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* --- Fila 1 · Suscripciones activas (T) + nuevas / perdidas --- */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
             <KpiCard
-              label="Clientes activos"
-              value={formatNumber(clientesActivos)}
-              mom={getMoM(kpi, "clientes_activos")}
+              className="sm:col-span-2 lg:col-span-3"
+              size="titular"
+              label="Suscripciones activas"
+              value={formatNumber(suscActivas)}
+              mom={getMoMAtMonth(kpi, "suscripciones_activas", activeMonth)}
+              subValues={[
+                {
+                  label: "vs. mes anterior",
+                  value: formatNumberDelta(
+                    getDeltaAtMonth(kpi, "suscripciones_activas", activeMonth)
+                  ),
+                },
+              ]}
             />
             <KpiCard
-              label="Nuevos"
-              value={formatNumber(clientesNuevos)}
-              mom={getMoM(kpi, "clientes_nuevos")}
+              className="lg:col-span-2"
+              label="Nuevas"
+              value={formatNumber(
+                getValueAtMonth(kpi, "suscripciones_nuevas", activeMonth)
+              )}
+              mom={getMoMAtMonth(kpi, "suscripciones_nuevas", activeMonth)}
             />
             <KpiCard
-              label="Perdidos"
-              value={formatNumber(clientesPerdidos)}
-              mom={getMoMAbs(kpi, "clientes_perdidos")}
+              className="lg:col-span-2"
+              label="Perdidas"
+              value={formatNumber(suscPerdidas)}
+              mom={getMoMAbsAtMonth(kpi, "suscripciones_perdidas", activeMonth)}
               momIsGoodWhenPositive={false}
-            />
-            <KpiCard
-              label="Retención"
-              value={formatPercent(retention)}
-              mom={getMoM(kpi, "retention_rate")}
-            />
-            <KpiCard
-              label="Churn 3M"
-              value={formatPercent(churn3m)}
-              momIsGoodWhenPositive={false}
-            />
-            <KpiCard label="ARPC" value={formatCurrency(arpc)} mom={getMoM(kpi, "ARPC")} />
-            <KpiCard label="LTV en churn" value={formatCurrency(ltvChurn)} />
-            <KpiCard
-              label="Permanencia media"
-              value={permanencia !== null ? `${formatNumber(permanencia)} m` : "—"}
             />
           </div>
 
-          <Panel
-            title="Cohortes de clientes"
-            description="Retención por cohorte a lo largo de los meses de vida"
-          >
-            <CohortHeatmap data={cohortesFiltradas} />
-          </Panel>
+          {/* --- Fila 2 · ARPC · permanencia · LTV · churn 3M · LTV:CAC --- */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <KpiCard
+              label="ARPC"
+              value={formatCurrency(getValueAtMonth(kpi, "ARPC", activeMonth))}
+              mom={getMoMAtMonth(kpi, "ARPC", activeMonth)}
+            />
+            <KpiCard
+              label="Permanencia media"
+              value={permanencia !== null ? `${formatNumber(permanencia)} m` : "—"}
+              mom={getMoMAtMonth(kpi, "permanencia", activeMonth)}
+            />
+            <KpiCard
+              label="LTV"
+              value={formatCurrency(getValueAtMonth(kpi, "LTV", activeMonth))}
+              mom={getMoMAtMonth(kpi, "LTV", activeMonth)}
+            />
+            {/* churn_3m = clientes_churn_3m (tasa 0-1 → %). */}
+            <KpiCard
+              label="Churn 3M"
+              value={formatPercent(getValueAtMonth(kpi, "clientes_churn_3m", activeMonth))}
+              mom={getMoMAtMonth(kpi, "clientes_churn_3m", activeMonth)}
+              momIsGoodWhenPositive={false}
+            />
+            {/* LTV:CAC calculado (LTV/CAC), no la columna cruda que da 0. */}
+            <KpiCard
+              label="LTV : CAC"
+              value={ltvCac !== null ? `${formatNumber(ltvCac)}x` : "—"}
+              semaforo={ltvCacSemaforo(ltvCac)}
+              hint="Objetivo: ≥ 3x"
+            />
+          </div>
 
+          {/* --- C4 · Clientes nuevos/recurrentes + retención --- */}
           <Panel
-            title="Clientes nuevos vs. perdidos"
-            description="Altas y bajas mes a mes para leer el balance neto de la base."
+            title="Clientes nuevos y recurrentes con retención"
+            description="Clientes nuevos + recurrentes (apilados, eje izq.) y la tasa de retención como línea (%) sobre eje derecho."
+            action={<RangeFilter value={movRange} onChange={setMovRange} />}
           >
-            <MultiTrendChart
-              data={nuevosVsPerdidos}
-              series={[
-                { key: "clientes_nuevos", label: "Nuevos", color: "#1e9e3a" },
-                { key: "clientes_perdidos", label: "Perdidos", color: "#d6483c" },
+            <ComposedBarLineChart
+              data={movRows}
+              stacked
+              bars={[
+                { key: "clientes_recurrentes", label: "Recurrentes", color: "#1e9e3a" },
+                { key: "clientes_nuevos", label: "Nuevos", color: "#ffc400" },
               ]}
-              valueFormatter={(v) => formatNumber(v)}
+              line={{ key: "retention_rate", label: "Retención", color: "#143a24" }}
+              barFormatter={(v) => formatNumber(v)}
+              lineFormatter={(v) => formatPercent(v)}
             />
           </Panel>
 
+          {/* --- C5 · Permanencia --- */}
+          <Panel
+            title="Permanencia en el tiempo"
+            description="Permanencia media de la base activa y de los clientes perdidos (en meses)."
+            action={<RangeFilter value={permRange} onChange={setPermRange} />}
+          >
+            <MultiTrendChart
+              data={permRows}
+              series={[
+                { key: "permanencia", label: "Permanencia", color: "#1e9e3a" },
+                { key: "permanencia_perdidos", label: "Permanencia perdidos", color: "#d6483c" },
+              ]}
+              valueFormatter={(v) => `${formatNumber(v)} m`}
+            />
+          </Panel>
+
+          {/* --- C6 · Churn --- */}
+          <Panel
+            title="Churn de clientes y de MRR"
+            description="Tasa de churn de clientes y de MRR, ambas en %."
+            action={<RangeFilter value={churnRange} onChange={setChurnRange} />}
+          >
+            <MultiTrendChart
+              data={churnRows}
+              series={[
+                { key: "clientes_churn", label: "Churn clientes", color: "#d6483c" },
+                { key: "MRR_churn", label: "Churn MRR", color: "#e07a1f" },
+              ]}
+              valueFormatter={(v) => formatPercent(v)}
+            />
+          </Panel>
+
+          {/* --- C7 · ARPC + LTV --- */}
+          <Panel
+            title="ARPC y LTV"
+            description="Barras: ARPC mensual (eje izq., €). Área: LTV mensual (eje der., €)."
+            action={<RangeFilter value={arpcLtvRange} onChange={setArpcLtvRange} />}
+          >
+            <ComposedBarAreaChart
+              data={arpcLtvRows}
+              bar={{ key: "ARPC", label: "ARPC", color: "#a9d5b5" }}
+              area={{ key: "LTV", label: "LTV", color: "#14803a" }}
+              barFormatter={(v) => formatCurrency(v)}
+              areaFormatter={(v) => formatCurrency(v)}
+            />
+          </Panel>
+
+          {/* --- C8 · Heatmap de cohortes (rango + diferencia mes a mes) --- */}
+          <Panel
+            title="Cohortes de clientes — pérdida mes a mes"
+            description="Cada celda muestra la DIFERENCIA de clientes respecto al mes de vida anterior (rojo = pérdida, verde = ganancia). La columna m0 queda vacía por ser la base."
+            action={
+              cohortList.length > 0 ? (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-drc-ink-soft">Cohortes:</span>
+                  <select
+                    value={cohortFrom}
+                    onChange={(e) => setCohortFrom(e.target.value)}
+                    className="rounded-lg border border-drc-line bg-white px-2 py-1 text-drc-ink"
+                  >
+                    <option value="">Primera</option>
+                    {cohortList.map((c) => (
+                      <option key={c.cohort} value={c.cohort}>
+                        {c.cohort}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-drc-ink-soft">→</span>
+                  <select
+                    value={cohortTo}
+                    onChange={(e) => setCohortTo(e.target.value)}
+                    className="rounded-lg border border-drc-line bg-white px-2 py-1 text-drc-ink"
+                  >
+                    <option value="">Última</option>
+                    {cohortList.map((c) => (
+                      <option key={c.cohort} value={c.cohort}>
+                        {c.cohort}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : undefined
+            }
+          >
+            <CohortHeatmap data={cohortDiff} variant="diff" />
+          </Panel>
+
+          {/* --- C10 · Motivos de cancelación + cupones --- */}
           <div className="grid lg:grid-cols-2 gap-4">
             <Panel title="Motivos de cancelación" description="Conteo por motivo declarado">
               <RankedBars items={motivos} color="#d6483c" />
             </Panel>
-            <Panel title="LTV : CAC en el tiempo">
-              <TrendChart
-                data={ltvCacSeries}
-                color="#1e9e3a"
-                valueFormatter={(v) => `${v}x`}
-              />
+            <Panel
+              title="Cupones de retención"
+              description="Últimos cupones aplicados en el flujo anticancelaciones (datos crudos de la hoja Cupon)."
+            >
+              {cuponRows.length === 0 ? (
+                <EmptyState label='Sin datos en la hoja "Cupon"' />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-drc-ink-soft border-b border-drc-line">
+                        <th className="py-2 pr-4 font-medium">Fecha</th>
+                        <th className="py-2 pr-4 font-medium">Cupón</th>
+                        <th className="py-2 pr-4 font-medium">Suscripción</th>
+                        <th className="py-2 font-medium">Impacto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cuponRows.slice(0, 10).map((row, i) => (
+                        <tr key={i} className="border-b border-drc-line/60">
+                          <td className="py-2 pr-4 tabular text-drc-ink-soft">
+                            {row.fecha ?? "—"}
+                          </td>
+                          <td className="py-2 pr-4">{row.cupon || "—"}</td>
+                          <td className="py-2 pr-4 tabular">{row.suscripcion || "—"}</td>
+                          <td className="py-2">{row.impacto || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </Panel>
           </div>
-
-          <Panel
-            title="Impacto de cupones de retención"
-            description="Últimos cupones aplicados en el flujo anticancelaciones"
-          >
-            {cuponRows.length === 0 ? (
-              <EmptyState label='Sin datos en la hoja "Cupon"' />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-left text-drc-ink-soft border-b border-drc-line">
-                      <th className="py-2 pr-4 font-medium">Fecha</th>
-                      <th className="py-2 pr-4 font-medium">Cupón</th>
-                      <th className="py-2 pr-4 font-medium">Suscripción</th>
-                      <th className="py-2 font-medium">Impacto</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cuponRows.slice(0, 10).map((row, i) => (
-                      <tr key={i} className="border-b border-drc-line/60">
-                        <td className="py-2 pr-4 tabular text-drc-ink-soft">
-                          {row.fecha ?? "—"}
-                        </td>
-                        <td className="py-2 pr-4">{row.cupon || "—"}</td>
-                        <td className="py-2 pr-4 tabular">{row.suscripcion || "—"}</td>
-                        <td className="py-2">{row.impacto || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
         </div>
       )}
     </>

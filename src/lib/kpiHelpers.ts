@@ -386,6 +386,42 @@ export function getLtvCacSeries(
   return kpi.months.map((month) => ({ month, value: ltvCacAt(kpi, month) }));
 }
 
+/** LTV:CAC de un mes concreto (el elegido en el desplegable). Ver ltvCacAt. */
+export function getLtvCacAtMonth(kpi: DBKpiData, month: string): MetricValue {
+  if (!month) return null;
+  return ltvCacAt(kpi, month);
+}
+
+/**
+ * MoM sobre valores absolutos calculado respecto al mes elegido. Versión "at
+ * month" de getMoMAbs: para métricas de "pérdida" guardadas en negativo
+ * (suscripciones_perdidas, clientes_perdidos), donde perder MÁS debe leerse como
+ * variación positiva (y con momIsGoodWhenPositive=false pintarse en rojo).
+ */
+export function getMoMAbsAtMonth(
+  kpi: DBKpiData,
+  key: string,
+  month: string
+): number | null {
+  const idx = kpi.months.indexOf(month);
+  if (idx < 0) return null;
+  const latest = getValueAtMonth(kpi, key, month);
+  if (latest === null) return null;
+  let prev: MetricValue = null;
+  for (let i = idx - 1; i >= 0; i--) {
+    const v = kpi.data[kpi.months[i]]?.[key];
+    if (v !== null && v !== undefined) {
+      prev = v;
+      break;
+    }
+  }
+  if (prev === null) return null;
+  const a = Math.abs(latest);
+  const p = Math.abs(prev);
+  if (p === 0) return null;
+  return ((a - p) / p) * 100;
+}
+
 export function getLtvCacLatest(kpi: DBKpiData): MetricValue {
   for (let i = kpi.months.length - 1; i >= 0; i--) {
     const v = ltvCacAt(kpi, kpi.months[i]);

@@ -3,35 +3,79 @@
 import type { CohortData } from "@/types/kpi";
 import { EmptyState } from "./EmptyState";
 
-/** Interpola entre el crema de fondo y el verde de marca según intensidad 0-1. */
-function cellColor(ratio: number | null): string {
-  if (ratio === null) return "#f0f0ec";
-  const clamped = Math.min(1, Math.max(0, ratio));
-  // De crema (#F7F7F5) a verde marca (#1E9E3A)
-  const from = { r: 247, g: 247, b: 245 };
-  const to = { r: 30, g: 158, b: 58 };
-  const r = Math.round(from.r + (to.r - from.r) * clamped);
-  const g = Math.round(from.g + (to.g - from.g) * clamped);
-  const b = Math.round(from.b + (to.b - from.b) * clamped);
+/** Interpola entre dos colores RGB según t (0-1). */
+function mix(
+  from: { r: number; g: number; b: number },
+  to: { r: number; g: number; b: number },
+  t: number
+): string {
+  const c = Math.min(1, Math.max(0, t));
+  const r = Math.round(from.r + (to.r - from.r) * c);
+  const g = Math.round(from.g + (to.g - from.g) * c);
+  const b = Math.round(from.b + (to.b - from.b) * c);
   return `rgb(${r},${g},${b})`;
+}
+
+const CREMA = { r: 247, g: 247, b: 245 };
+const VERDE = { r: 30, g: 158, b: 58 }; // #1E9E3A
+const ROJO = { r: 214, g: 72, b: 60 }; // #D6483C
+
+/** Modo secuencial (retención): crema → verde según intensidad 0-1. */
+function cellColorRatio(ratio: number | null): string {
+  if (ratio === null) return "#f0f0ec";
+  return mix(CREMA, VERDE, ratio);
+}
+
+/**
+ * Modo divergente (diferencia mes a mes): negativo (pérdida) → rojo, cercano a 0
+ * (estable) → crema, positivo (ganancia) → verde. `ratio` va en [-1, 1].
+ */
+function cellColorDiverging(ratio: number | null): string {
+  if (ratio === null) return "#f0f0ec";
+  if (ratio < 0) return mix(CREMA, ROJO, -ratio);
+  return mix(CREMA, VERDE, ratio);
 }
 
 export function CohortHeatmap({
   data,
-  valueSuffix = "%",
+  valueSuffix,
   maxValue,
+  variant = "ratio",
 }: {
   data: CohortData;
   valueSuffix?: string;
   maxValue?: number;
+  /**
+   * "ratio" (default): valores 0..max, escala secuencial crema→verde.
+   * "diff": valores con signo (diferencia mes a mes), escala divergente
+   *   rojo↔crema↔verde centrada en 0 y etiquetas con signo (+/-).
+   */
+  variant?: "ratio" | "diff";
 }) {
   if (!data || data.cohorts.length === 0) return <EmptyState />;
+
+  const isDiff = variant === "diff";
+  const suffix = valueSuffix ?? (isDiff ? "" : "%");
 
   const allValues = data.cohorts.flatMap((c) =>
     c.values.filter((v): v is number => v !== null)
   );
-  const inferredMax = allValues.length > 0 ? Math.max(...allValues) : 1;
+
+  // Ratio: normalizamos por el máximo. Diff: por el máximo VALOR ABSOLUTO, para
+  // que la escala divergente quede centrada en 0.
+  const inferredMax = isDiff
+    ? allValues.length > 0
+      ? Math.max(...allValues.map((v) => Math.abs(v)))
+      : 1
+    : allValues.length > 0
+      ? Math.max(...allValues)
+      : 1;
   const max = maxValue ?? (inferredMax > 0 ? inferredMax : 1);
+
+  const label = (v: number) =>
+    isDiff
+      ? `${v > 0 ? "+" : ""}${Math.round(v)}`
+      : `${Math.round(v)}`;
 
   return (
     <div className="overflow-x-auto">
@@ -59,17 +103,20 @@ export function CohortHeatmap({
               </td>
               {row.values.map((v, i) => {
                 const ratio = v !== null ? v / max : null;
+                const bg = isDiff ? cellColorDiverging(ratio) : cellColorRatio(ratio);
+                // Texto blanco sólo sobre fondos saturados.
+                const strong = ratio !== null && Math.abs(ratio) > 0.55;
                 return (
                   <td key={i}>
                     <div
-                      title={v !== null ? `${v}${valueSuffix}` : "sin dato"}
+                      title={v !== null ? `${label(v)}${suffix}` : "sin dato"}
                       className="group relative h-9 w-12 rounded-md flex items-center justify-center text-[10px] tabular transition-transform hover:scale-[1.08] hover:z-10 hover:shadow-md cursor-default"
                       style={{
-                        background: cellColor(ratio),
-                        color: ratio !== null && ratio > 0.55 ? "#fff" : "var(--drc-ink)",
+                        background: bg,
+                        color: strong ? "#fff" : "var(--drc-ink)",
                       }}
                     >
-                      {v !== null ? Math.round(v) : "—"}
+                      {v !== null ? label(v) : "—"}
                     </div>
                   </td>
                 );
