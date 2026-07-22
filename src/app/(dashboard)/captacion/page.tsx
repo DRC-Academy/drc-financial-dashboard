@@ -17,6 +17,7 @@ import {
   getValueAtMonth,
   getMoMAtMonth,
   getRoiCanal,
+  getAlertaOperativa,
   formatCurrency,
   formatNumber,
   formatPercent,
@@ -191,6 +192,11 @@ export default function CaptacionPage() {
               gasto={formatCurrency(getValueAtMonth(kpi, "ads_google", activeMonth))}
               gastoMom={getMoMAtMonth(kpi, "ads_google", activeMonth)}
               gastoIsGoodWhenPositive={false}
+              ingreso={{
+                label: "Ingresos",
+                value: formatCurrency(getValueAtMonth(kpi, "ingresos_google", activeMonth)),
+                mom: getMoMAtMonth(kpi, "ingresos_google", activeMonth),
+              }}
               leads={[
                 {
                   label: "Leads ads",
@@ -202,10 +208,22 @@ export default function CaptacionPage() {
                 },
               ]}
               metrics={[
-                { label: "CPL", value: formatCurrency(getValueAtMonth(kpi, "CPL_google", activeMonth)) },
+                {
+                  label: "CPL",
+                  value: formatCurrency(getValueAtMonth(kpi, "CPL_google", activeMonth)),
+                  alerta: getAlertaOperativa("CPL_ads", getValueAtMonth(kpi, "CPL_google", activeMonth)),
+                },
                 { label: "Ventas", value: formatNumber(getValueAtMonth(kpi, "ventas_google", activeMonth)) },
-                { label: "CAC", value: formatCurrency(getValueAtMonth(kpi, "CAC_google", activeMonth)) },
-                { label: "Ingresos", value: formatCurrency(getValueAtMonth(kpi, "ingresos_google", activeMonth)) },
+                {
+                  label: "CAC",
+                  value: formatCurrency(getValueAtMonth(kpi, "CAC_google", activeMonth)),
+                  alerta: getAlertaOperativa("CAC", getValueAtMonth(kpi, "CAC_google", activeMonth)),
+                },
+                {
+                  label: "CR",
+                  value: formatPercent(getValueAtMonth(kpi, "CR_google", activeMonth)),
+                  alerta: getAlertaOperativa("CR_clientes", getValueAtMonth(kpi, "CR_google", activeMonth)),
+                },
                 { label: "ROI", value: formatPercent(getRoiCanal(kpi, activeMonth, "google")) },
               ]}
             />
@@ -216,6 +234,11 @@ export default function CaptacionPage() {
               gasto={formatCurrency(getValueAtMonth(kpi, "ads_meta_captac", activeMonth))}
               gastoMom={getMoMAtMonth(kpi, "ads_meta_captac", activeMonth)}
               gastoIsGoodWhenPositive={false}
+              ingreso={{
+                label: "Ingresos",
+                value: formatCurrency(getValueAtMonth(kpi, "ingresos_meta", activeMonth)),
+                mom: getMoMAtMonth(kpi, "ingresos_meta", activeMonth),
+              }}
               leads={[
                 {
                   label: "Leads ads",
@@ -227,10 +250,22 @@ export default function CaptacionPage() {
                 },
               ]}
               metrics={[
-                { label: "CPL", value: formatCurrency(getValueAtMonth(kpi, "CPL_meta", activeMonth)) },
+                {
+                  label: "CPL",
+                  value: formatCurrency(getValueAtMonth(kpi, "CPL_meta", activeMonth)),
+                  alerta: getAlertaOperativa("CPL_ads", getValueAtMonth(kpi, "CPL_meta", activeMonth)),
+                },
                 { label: "Ventas", value: formatNumber(getValueAtMonth(kpi, "ventas_meta", activeMonth)) },
-                { label: "CAC", value: formatCurrency(getValueAtMonth(kpi, "CAC_meta", activeMonth)) },
-                { label: "Ingresos", value: formatCurrency(getValueAtMonth(kpi, "ingresos_meta", activeMonth)) },
+                {
+                  label: "CAC",
+                  value: formatCurrency(getValueAtMonth(kpi, "CAC_meta", activeMonth)),
+                  alerta: getAlertaOperativa("CAC", getValueAtMonth(kpi, "CAC_meta", activeMonth)),
+                },
+                {
+                  label: "CR",
+                  value: formatPercent(getValueAtMonth(kpi, "CR_meta", activeMonth)),
+                  alerta: getAlertaOperativa("CR_clientes", getValueAtMonth(kpi, "CR_meta", activeMonth)),
+                },
                 { label: "ROI", value: formatPercent(getRoiCanal(kpi, activeMonth, "meta")) },
               ]}
             />
