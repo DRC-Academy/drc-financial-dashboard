@@ -10,6 +10,7 @@ const NAV = [
   { href: "/ingresos", label: "Ingresos" },
   { href: "/retencion", label: "Retención" },
   { href: "/financiera", label: "Financiera" },
+  { href: "/producto", label: "Producto" },
 ];
 
 export function MobileNav() {

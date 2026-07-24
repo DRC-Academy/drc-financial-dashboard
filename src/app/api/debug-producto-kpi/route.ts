@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { readSheetValues } from "@/lib/sheetsClient";
+import { readProductoKPI } from "@/lib/productoKpi";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Endpoint TEMPORAL de diagnóstico para la hoja "KPI Producto".
- * Devuelve las primeras ~20 filas CRUDAS (sin transponer ni parsear) para ver
- * la estructura real: nombre de hoja correcto, si hay varias tablas apiladas,
- * si la primera fila son productos, etc. Borrar una vez diagnosticado.
+ * Endpoint TEMPORAL de diagnóstico de la hoja "KPI Producto".
  *
- * Uso: abrir /api/debug-producto-kpi en el navegador y pegar el JSON.
+ * Se deja vivo a propósito mientras afinamos la página de Producto: devuelve a
+ * la vez las filas CRUDAS y el resultado del parser, que es lo que hace falta
+ * para decidir qué bloques merecen visualización propia sin tener que abrir el
+ * Sheet. Borrar cuando la página esté cerrada.
+ *
+ * Uso: abrir /api/debug-producto-kpi en el navegador.
  */
 export async function GET() {
   try {
@@ -22,19 +25,29 @@ export async function GET() {
         rows: null,
       });
     }
+
+    const parsed = await readProductoKPI();
+
     return NextResponse.json({
       ok: true,
       sheet: "KPI Producto",
       totalRows: rows.length,
-      firstRowLength: rows[0]?.length ?? 0,
-      // primeras 20 filas crudas tal como las devuelve Sheets
-      sample: rows.slice(0, 20),
+      // Filas crudas, con su índice real, para cotejar contra el parser.
+      sample: rows.slice(0, 30).map((r, i) => ({ i, row: r })),
+      // Resumen de lo que reconoce el parser: un bloque por tabla apilada.
+      parsed: {
+        months: parsed.months,
+        productos: parsed.productos,
+        blocks: parsed.blocks.map((b) => ({
+          name: b.name,
+          dimension: b.dimension,
+          parent: b.parent,
+          series: b.series.map((s) => s.label),
+          totalesConDato: b.totals.filter((v) => v !== null).length,
+        })),
+      },
     });
   } catch (err) {
-    return NextResponse.json({
-      ok: false,
-      reason: String(err),
-      rows: null,
-    });
+    return NextResponse.json({ ok: false, reason: String(err), rows: null });
   }
 }

@@ -10,6 +10,7 @@ const NAV = [
   { href: "/ingresos", label: "Ingresos", eyebrow: "03" },
   { href: "/retencion", label: "Retención", eyebrow: "04" },
   { href: "/financiera", label: "Situación financiera", eyebrow: "05" },
+  { href: "/producto", label: "Producto", eyebrow: "06" },
 ];
 
 export function Sidebar() {
