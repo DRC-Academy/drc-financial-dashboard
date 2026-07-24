@@ -148,6 +148,15 @@ export function alertaToSemaforo(color: AlertaColor): SemaforoColor {
 export type AlertaKey = "CPL_ads" | "CAC" | "CR_clientes";
 
 /**
+ * Umbral a partir del cual CR_clientes cuenta como "EN OBJETIVO", en FRACCIÓN
+ * (0-1) igual que el valor del Sheet. Vive acá — y no suelto dentro de
+ * getAlertaOperativa — porque la tarjeta de CR lo reutiliza como hint de
+ * objetivo cuando el Sheet no trae la columna CR_obj. Un único número: si
+ * cambia el criterio, cambian a la vez el chip de alerta y el hint.
+ */
+export const CR_OBJETIVO = 0.28;
+
+/**
  * Alerta operativa por umbrales fijos (se pinta en el nivel n3 de la tarjeta).
  * Función pura y client-safe: no toca el Sheet ni sheetsClient.
  *
@@ -178,7 +187,7 @@ export function getAlertaOperativa(
     case "CR_clientes":
       if (value < 0.2) return { texto: "PELIGRO", color: "red" };
       if (value < 0.25) return { texto: "MEJORABLE", color: "yellow" };
-      if (value < 0.28) return { texto: "BIEN", color: "green" };
+      if (value < CR_OBJETIVO) return { texto: "BIEN", color: "green" };
       return { texto: "EN OBJETIVO", color: "blue" };
   }
 }

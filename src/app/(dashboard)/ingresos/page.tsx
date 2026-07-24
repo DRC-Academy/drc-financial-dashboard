@@ -64,6 +64,9 @@ export default function IngresosPage() {
   const [canalRange, setCanalRange] = useState(0);
   const [pedRange, setPedRange] = useState(0);
   const [aovRange, setAovRange] = useState(0);
+  // La tarjeta de ingresos acumulados tiene su propio rango, independiente del
+  // de los gráficos.
+  const [acumRange, setAcumRange] = useState(0);
 
   // ---- Fila 1 · Ingresos netos + MRR ----
   const ingresosNetos = getValueAtMonth(kpi, "ingresos_netos", activeMonth);
@@ -97,11 +100,26 @@ export default function IngresosPage() {
   const pedidos = getValueAtMonth(kpi, "pedidos", activeMonth);
   const aov = getValueAtMonth(kpi, "AOV", activeMonth);
   const aovNuevos = getValueAtMonth(kpi, "AOV_nuevos", activeMonth);
-  const ingresosAcumulados = getValueAtMonth(
-    kpi,
-    "ingresos_acumulados",
-    activeMonth
-  );
+
+  // ---- Ingresos acumulados con rango propio ----
+  // El período va de los últimos N meses HASTA el mes elegido en el desplegable
+  // (no hasta el último mes disponible). El n1 es el acumulado a CIERRE de ese
+  // período; el n2, cuánto se sumó DENTRO del período (cierre − mes previo al
+  // arranque), que es lo que de verdad cambia al mover el filtro.
+  const acumMonthsUpTo = months.slice(0, months.indexOf(activeMonth) + 1);
+  const acumWindow = applyRange(acumMonthsUpTo, acumRange);
+  const acumFin = acumWindow[acumWindow.length - 1] ?? "";
+  const acumInicio = acumWindow[0] ?? "";
+  const ingresosAcumulados = getValueAtMonth(kpi, "ingresos_acumulados", acumFin);
+  // Base = acumulado del mes ANTERIOR al primero de la ventana. Si la ventana
+  // arranca en el primer mes del dataset no hay base previa → el acumulado del
+  // período es el acumulado entero.
+  const acumBaseMonth = months[months.indexOf(acumInicio) - 1] ?? "";
+  const acumBase = acumBaseMonth
+    ? getValueAtMonth(kpi, "ingresos_acumulados", acumBaseMonth)
+    : 0;
+  const acumEnPeriodo =
+    ingresosAcumulados === null ? null : ingresosAcumulados - (acumBase ?? 0);
 
   // ---- Gráfico · mix de ingresos por línea de negocio (apilado) ----
   const mixRows = applyRange(months, mixRange).map((month) => ({
@@ -230,28 +248,49 @@ export default function IngresosPage() {
             />
           </div>
 
-          {/* --- Fila · Pedidos + AOV + acumulado --- */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* --- Fila · Pedidos + el par AOV / AOV nuevos --- */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <KpiCard
               label="Pedidos"
               value={formatNumber(pedidos)}
               mom={getMoMAtMonth(kpi, "pedidos", activeMonth)}
             />
-            <KpiCard
-              label="AOV"
-              value={formatCurrency(aov)}
-              mom={getMoMAtMonth(kpi, "AOV", activeMonth)}
-            />
-            <KpiCard
-              label="AOV nuevos"
-              value={formatCurrency(aovNuevos)}
-              mom={getMoMAtMonth(kpi, "AOV_nuevos", activeMonth)}
-            />
-            <KpiCard
-              label="Ingresos acumulados"
-              value={formatCurrency(ingresosAcumulados)}
-            />
+            {/* AOV y AOV nuevos son la misma métrica sobre dos poblaciones: van
+                SIEMPRE una al lado de la otra (grid propio de 2 columnas), para
+                que la comparación se lea de un vistazo también en móvil. */}
+            <div className="grid grid-cols-2 gap-4 lg:col-span-2">
+              <KpiCard
+                label="AOV"
+                value={formatCurrency(aov)}
+                mom={getMoMAtMonth(kpi, "AOV", activeMonth)}
+              />
+              <KpiCard
+                label="AOV nuevos"
+                value={formatCurrency(aovNuevos)}
+                mom={getMoMAtMonth(kpi, "AOV_nuevos", activeMonth)}
+              />
+            </div>
           </div>
+
+          {/* --- Fila · Ingresos acumulados, con su propio rango --- */}
+          <KpiCard
+            label="Ingresos acumulados"
+            value={formatCurrency(ingresosAcumulados)}
+            action={<RangeFilter value={acumRange} onChange={setAcumRange} />}
+            subValues={[
+              {
+                label: "Acumulado en el período",
+                value: formatCurrency(acumEnPeriodo),
+              },
+            ]}
+            hint={
+              acumInicio && acumFin
+                ? acumInicio === acumFin
+                  ? `Cierre de ${acumFin}`
+                  : `Período ${acumInicio} → ${acumFin} (cierre)`
+                : undefined
+            }
+          />
 
           {/* --- Gráfico · mix de ingresos por línea de negocio --- */}
           <Panel

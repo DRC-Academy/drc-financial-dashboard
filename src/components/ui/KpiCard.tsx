@@ -71,6 +71,7 @@ export function KpiCard({
   subValuesPosition = "below",
   semaforo = "neutral",
   hint,
+  action,
   className,
   children,
 }: {
@@ -97,6 +98,10 @@ export function KpiCard({
   subValuesPosition?: "below" | "right";
   semaforo?: SemaforoColor;
   hint?: string;
+  /** Control propio de la tarjeta, alineado a la derecha del título (mismo
+   *  sitio que el chip de alerta). Para tarjetas con su propio filtro, como el
+   *  RangeFilter de ingresos acumulados. */
+  action?: ReactNode;
   className?: string;
   /** Contenido extra libre bajo el valor. Para n2 preferí `subValues`. */
   children?: ReactNode;
@@ -180,7 +185,7 @@ export function KpiCard({
         <div className="text-xs uppercase tracking-wide text-drc-ink-soft">
           {label}
         </div>
-        {alertaChip}
+        {action ?? alertaChip}
       </div>
 
       <div

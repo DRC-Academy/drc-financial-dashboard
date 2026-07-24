@@ -19,6 +19,7 @@ import {
   getAlertaOperativa,
   getAlertaObjetivo,
   getRoiCanalLatest,
+  CR_OBJETIVO,
   formatCurrency,
   formatCurrencyDelta,
   formatNumber,
@@ -74,8 +75,15 @@ export default function ResumenPage() {
   const ltv = getValueAtMonth(kpi, "LTV", activeMonth);
   const ltvObj = getValueAtMonth(kpi, "LTV_obj", activeMonth);
   const cpl = getValueAtMonth(kpi, "CPL_ads", activeMonth);
+  const cplObj = getValueAtMonth(kpi, "CPL_obj", activeMonth);
   const cac = getValueAtMonth(kpi, "CAC", activeMonth);
+  const cacObj = getValueAtMonth(kpi, "CAC_obj", activeMonth);
   const cr = getValueAtMonth(kpi, "CR_clientes", activeMonth);
+  // CR sí tiene columna de objetivo en DB_KPI (CR_obj = 0,28), y coincide con
+  // el umbral de "EN OBJETIVO" del sistema de alertas. Usamos la columna y
+  // caemos a la constante sólo si el Sheet no la trae, para no inventar nada
+  // ni duplicar el número.
+  const crObj = getValueAtMonth(kpi, "CR_obj", activeMonth) ?? CR_OBJETIVO;
 
   // ---- Gráficos (usan su propio rango, sobre el dataset completo) ----
   const ingresosMrrSeries = applyRange(months, ingRange).map((month) => ({
@@ -256,6 +264,7 @@ export default function ResumenPage() {
               mom={getMoMAtMonth(kpi, "CPL_ads", activeMonth)}
               momIsGoodWhenPositive={false}
               alerta={getAlertaOperativa("CPL_ads", cpl)}
+              hint={cplObj !== null ? `Objetivo: ${formatCurrency(cplObj)}` : undefined}
             />
             <KpiCard
               label="CAC"
@@ -263,6 +272,7 @@ export default function ResumenPage() {
               mom={getMoMAtMonth(kpi, "CAC", activeMonth)}
               momIsGoodWhenPositive={false}
               alerta={getAlertaOperativa("CAC", cac)}
+              hint={cacObj !== null ? `Objetivo: ${formatCurrency(cacObj)}` : undefined}
             />
             {/* CR_clientes se compara en fracción (0-1) y se muestra en %. */}
             <KpiCard
@@ -270,6 +280,7 @@ export default function ResumenPage() {
               value={formatPercent(cr)}
               mom={getMoMAtMonth(kpi, "CR_clientes", activeMonth)}
               alerta={getAlertaOperativa("CR_clientes", cr)}
+              hint={`Objetivo: ${formatPercent(crObj)}`}
             />
           </div>
 
