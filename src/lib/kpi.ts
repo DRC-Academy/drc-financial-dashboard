@@ -38,7 +38,21 @@ export async function readDBKPI(): Promise<DBKpiData> {
     }
 
     const [headerRow, ...bodyRows] = rows;
-    const keys = headerRow.slice(1).map((h) => String(h).trim());
+
+    // Cada métrica se lee por su ÍNDICE DE COLUMNA real, no por su posición
+    // dentro de la lista de claves. Así una columna sin encabezado en el Sheet
+    // (o un encabezado repetido) se ignora sin desplazar a sus vecinas: es la
+    // diferencia entre "esa columna no se puede leer" y "todas las columnas a
+    // su derecha muestran el valor de la de al lado".
+    const columns: { key: string; index: number }[] = [];
+    const seen = new Set<string>();
+    for (let i = 1; i < headerRow.length; i++) {
+      const key = String(headerRow[i] ?? "").trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      columns.push({ key, index: i });
+    }
+    const keys = columns.map((c) => c.key);
 
     const months: string[] = [];
     const data: Record<string, MonthRecord> = {};
@@ -50,9 +64,9 @@ export async function readDBKPI(): Promise<DBKpiData> {
       if (!month) continue;
 
       const record: MonthRecord = {};
-      keys.forEach((key, idx) => {
-        record[key] = toNumberOrNull(row[idx + 1]);
-      });
+      for (const { key, index } of columns) {
+        record[key] = toNumberOrNull(row[index]);
+      }
 
       months.push(month);
       data[month] = record;

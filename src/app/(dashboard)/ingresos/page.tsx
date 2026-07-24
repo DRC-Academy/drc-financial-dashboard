@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import {
   getValueAtMonth,
   getMoMAtMonth,
+  getMoMAbsAtMonth,
   getDeltaAtMonth,
   formatCurrency,
   formatCurrencyDelta,
@@ -78,11 +79,18 @@ export default function IngresosPage() {
   ];
 
   // ---- Stripe / refunds (2 tarjetas n2) ----
-  // stripe_fee viene en negativo (es un coste): mostramos su magnitud.
+  // stripe_fee e importe_refunds vienen en NEGATIVO en el Sheet (convención de
+  // coste): mostramos su magnitud, y la variación también sobre magnitudes
+  // (getMoMAbsAtMonth) para que "pagar más fee" salga como subida (y en rojo).
   const stripeFee = getValueAtMonth(kpi, "stripe_fee", activeMonth);
   const stripeFeeAbs = stripeFee === null ? null : Math.abs(stripeFee);
+  // %_stripe_fee es el fee sobre los ingresos B2C BRUTOS (verificado contra el
+  // Sheet: ingresos_B2C_brutos × %_stripe_fee = |stripe_fee| al céntimo), no
+  // sobre ingresos_netos.
   const stripeFeePct = getValueAtMonth(kpi, "%_stripe_fee", activeMonth);
-  const importeRefunds = getValueAtMonth(kpi, "importe_refunds", activeMonth);
+  const importeRefundsRaw = getValueAtMonth(kpi, "importe_refunds", activeMonth);
+  const importeRefunds =
+    importeRefundsRaw === null ? null : Math.abs(importeRefundsRaw);
   const refundsNum = getValueAtMonth(kpi, "refunds_num", activeMonth);
 
   // ---- Pedidos + AOV + acumulado ----
@@ -205,14 +213,16 @@ export default function IngresosPage() {
             <KpiCard
               label="Fee de Stripe"
               value={formatCurrency(stripeFeeAbs)}
+              mom={getMoMAbsAtMonth(kpi, "stripe_fee", activeMonth)}
               momIsGoodWhenPositive={false}
               subValues={[
-                { label: "% s/ ingresos", value: formatPercent(stripeFeePct) },
+                { label: "% s/ B2C brutos", value: formatPercent(stripeFeePct) },
               ]}
             />
             <KpiCard
               label="Importe refunds"
               value={formatCurrency(importeRefunds)}
+              mom={getMoMAbsAtMonth(kpi, "importe_refunds", activeMonth)}
               momIsGoodWhenPositive={false}
               subValues={[
                 { label: "Nº refunds", value: formatNumber(refundsNum) },
