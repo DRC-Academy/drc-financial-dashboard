@@ -23,17 +23,20 @@ import {
   formatNumber,
   formatPercent,
 } from "@/lib/kpiHelpers";
+import { CAT, INGRESO, NEUTRO } from "@/lib/chartColors";
 import type { DBKpiData, MetricValue } from "@/types/kpi";
 
-/** Colores de identidad por canal, alineados con Captación. */
+/**
+ * En esta página TODO lo que se grafica es dinero que entra, así que las series
+ * salen de la rampa de INGRESO (azules) en vez de los colores de canal: el canal
+ * lo identifican la leyenda y el orden de apilado. Ver src/lib/chartColors.ts.
+ */
 const C = {
-  google: "#1e9e3a",
-  meta: "#eab308",
-  otros: "#94a3b8",
-  // Barras pastel del mismo hue para el gráfico de ingresos por canal.
-  googleBar: "#a9d5b5",
-  metaBar: "#ffe08a",
-  otrosBar: "#cbd5e1",
+  mrr: INGRESO.base,
+  otrosIngresos: INGRESO.suave,
+  canalGoogle: INGRESO.fuerte,
+  canalMeta: INGRESO.medio,
+  canalOtros: INGRESO.suave,
 };
 
 /** Resta a - b tratando null como 0, salvo que AMBOS sean null → null. */
@@ -77,8 +80,8 @@ export default function IngresosPage() {
   // ---- Dona · MRR como porción de ingresos_netos ----
   const otrosIngresos = subOrNull(ingresosNetos, mrr);
   const mrrSlices = [
-    { name: "MRR (recurrente)", value: mrr, color: C.google },
-    { name: "Otros ingresos", value: otrosIngresos, color: C.otros },
+    { name: "MRR (recurrente)", value: mrr, color: C.mrr },
+    { name: "Otros ingresos", value: otrosIngresos, color: C.otrosIngresos },
   ];
 
   // ---- Stripe / refunds (2 tarjetas n2) ----
@@ -301,6 +304,7 @@ export default function IngresosPage() {
             <StackedBarChart
               data={mixRows}
               keys={["B2C neto", "B2B", "Oritalk"]}
+              colors={[INGRESO.fuerte, INGRESO.medio, INGRESO.suave]}
               valueFormatter={(v) => formatCurrency(v)}
             />
           </Panel>
@@ -314,7 +318,7 @@ export default function IngresosPage() {
             <StackedBarChart
               data={canalRows}
               keys={["ingresos_google", "ingresos_meta", "ingresos_otros"]}
-              colors={[C.googleBar, C.metaBar, C.otrosBar]}
+              colors={[C.canalGoogle, C.canalMeta, C.canalOtros]}
               valueFormatter={(v) => formatCurrency(v)}
             />
           </Panel>
@@ -331,10 +335,10 @@ export default function IngresosPage() {
               /* Recharts apila en orden de declaración: el primero abajo. Para
                  que "nuevos" quede ARRIBA, va declarado último. */
               bars={[
-                { key: "pedidos_recurrentes", label: "Pedidos recurrentes", color: "#1e9e3a" },
-                { key: "pedidos_nuevos", label: "Pedidos nuevos", color: "#ffc400" },
+                { key: "pedidos_recurrentes", label: "Pedidos recurrentes", color: CAT.verdeClaro },
+                { key: "pedidos_nuevos", label: "Pedidos nuevos", color: CAT.oro },
               ]}
-              line={{ key: "recurrent_rate", label: "Tasa de recurrencia", color: "#143a24" }}
+              line={{ key: "recurrent_rate", label: "Tasa de recurrencia", color: NEUTRO.ink }}
               barFormatter={(v) => formatNumber(v)}
               lineFormatter={(v) => formatPercent(v)}
             />
@@ -349,8 +353,8 @@ export default function IngresosPage() {
             <MultiTrendChart
               data={aovRows}
               series={[
-                { key: "AOV", label: "AOV", color: "#1e9e3a" },
-                { key: "AOV_nuevos", label: "AOV nuevos", color: "#ffc400" },
+                { key: "AOV", label: "AOV", color: INGRESO.fuerte },
+                { key: "AOV_nuevos", label: "AOV nuevos", color: INGRESO.medio },
               ]}
               valueFormatter={(v) => formatCurrency(v)}
             />

@@ -12,6 +12,11 @@ import {
   CartesianGrid,
 } from "recharts";
 import { EmptyState } from "./EmptyState";
+import {
+  CHART_BAR_RADIUS,
+  CHART_STACK_GAP,
+  CHART_STROKE_WIDTH,
+} from "@/lib/chartColors";
 
 export interface ComposedPoint {
   month: string;
@@ -104,12 +109,13 @@ export function ComposedBarLineChart({
             name={b.label}
             fill={b.color}
             stackId={stacked ? "a" : undefined}
+            {...(stacked ? CHART_STACK_GAP : {})}
             radius={
               stacked
                 ? i === bars.length - 1
-                  ? [4, 4, 0, 0]
+                  ? CHART_BAR_RADIUS
                   : undefined
-                : [4, 4, 0, 0]
+                : CHART_BAR_RADIUS
             }
           />
         ))}
@@ -119,7 +125,7 @@ export function ComposedBarLineChart({
           dataKey={line.key}
           name={line.label}
           stroke={line.color}
-          strokeWidth={2}
+          strokeWidth={CHART_STROKE_WIDTH}
           dot={false}
           connectNulls
         />

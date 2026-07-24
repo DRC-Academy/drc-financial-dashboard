@@ -2,6 +2,16 @@
 
 import type { CohortData } from "@/types/kpi";
 import { EmptyState } from "./EmptyState";
+import { CAT, GASTO } from "@/lib/chartColors";
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const h = hex.replace("#", "");
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
 
 /** Interpola entre dos colores RGB según t (0-1). */
 function mix(
@@ -17,8 +27,10 @@ function mix(
 }
 
 const CREMA = { r: 247, g: 247, b: 245 };
-const VERDE = { r: 30, g: 158, b: 58 }; // #1E9E3A
-const ROJO = { r: 214, g: 72, b: 60 }; // #D6483C
+/** Ganancia de clientes → verde de categoría. Pérdida → rojo de gasto/pérdida,
+ *  el mismo que el resto del dashboard (ver src/lib/chartColors.ts). */
+const VERDE = hexToRgb(CAT.verde);
+const ROJO = hexToRgb(GASTO.base);
 
 /** Modo secuencial (retención): crema → verde según intensidad 0-1. */
 function cellColorRatio(ratio: number | null): string {

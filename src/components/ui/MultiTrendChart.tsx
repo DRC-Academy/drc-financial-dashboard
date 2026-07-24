@@ -11,6 +11,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { EmptyState } from "./EmptyState";
+import { CHART_STROKE_WIDTH } from "@/lib/chartColors";
 
 export interface MultiTrendPoint {
   month: string;
@@ -71,7 +72,7 @@ export function MultiTrendChart({
             dataKey={s.key}
             name={s.label}
             stroke={s.color}
-            strokeWidth={2}
+            strokeWidth={CHART_STROKE_WIDTH}
             dot={false}
             connectNulls
           />

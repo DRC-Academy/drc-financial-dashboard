@@ -1,8 +1,9 @@
 import { EmptyState } from "./EmptyState";
+import { CAT } from "@/lib/chartColors";
 
 export function RankedBars({
   items,
-  color = "var(--drc-green)",
+  color = CAT.verde,
 }: {
   items: { label: string; value: number }[];
   color?: string;

@@ -11,6 +11,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { EmptyState } from "./EmptyState";
+import { CHART_STROKE_WIDTH } from "@/lib/chartColors";
 
 export interface DualAxisPoint {
   month: string;
@@ -88,7 +89,7 @@ export function DualAxisChart({
           dataKey="left"
           name={left.label}
           stroke={left.color}
-          strokeWidth={2}
+          strokeWidth={CHART_STROKE_WIDTH}
           dot={false}
           connectNulls
         />
@@ -98,7 +99,7 @@ export function DualAxisChart({
           dataKey="right"
           name={right.label}
           stroke={right.color}
-          strokeWidth={2}
+          strokeWidth={CHART_STROKE_WIDTH}
           dot={false}
           connectNulls
         />

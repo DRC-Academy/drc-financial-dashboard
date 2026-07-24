@@ -11,6 +11,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { EmptyState } from "./EmptyState";
+import { CHART_BAR_RADIUS } from "@/lib/chartColors";
 
 export interface ComparisonPoint {
   month: string;
@@ -66,7 +67,7 @@ export function BarComparison({
             dataKey={s.key}
             name={s.label}
             fill={s.color}
-            radius={[4, 4, 0, 0]}
+            radius={CHART_BAR_RADIUS}
           />
         ))}
       </BarChart>

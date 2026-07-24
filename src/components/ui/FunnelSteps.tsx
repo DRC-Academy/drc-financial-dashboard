@@ -1,4 +1,5 @@
 import { EmptyState } from "./EmptyState";
+import { CANAL, CAT } from "@/lib/chartColors";
 
 export interface FunnelStep {
   label: string;
@@ -38,10 +39,12 @@ export function FunnelSteps({ steps }: { steps: FunnelStep[] }) {
                 className="h-full rounded-md"
                 style={{
                   width: `${Math.max(pct, step.value ? 4 : 0)}%`,
+                  // Un embudo son etapas (leads → ventas), no dinero: verde y
+                  // oro de CATEGORIA, nunca azul ni rojo.
                   background:
                     i === 0
-                      ? "linear-gradient(90deg, var(--drc-green), #3fbb59)"
-                      : "linear-gradient(90deg, var(--drc-yellow), #ffd94d)",
+                      ? `linear-gradient(90deg, ${CAT.verde}, ${CAT.verdeClaro})`
+                      : `linear-gradient(90deg, ${CAT.oro}, ${CANAL.metaSuave})`,
                 }}
               />
             </div>

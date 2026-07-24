@@ -10,6 +10,11 @@ import {
   CartesianGrid,
 } from "recharts";
 import { EmptyState } from "./EmptyState";
+import {
+  CAT,
+  CHART_STROKE_WIDTH,
+  CHART_AREA_FILL_OPACITY,
+} from "@/lib/chartColors";
 
 export interface TrendPoint {
   month: string;
@@ -18,7 +23,7 @@ export interface TrendPoint {
 
 export function TrendChart({
   data,
-  color = "var(--drc-green)",
+  color = CAT.verde,
   valueFormatter,
   height = 220,
 }: {
@@ -30,12 +35,21 @@ export function TrendChart({
   const hasData = data.some((d) => d.value !== null);
   if (!hasData) return <EmptyState />;
 
+  // El id del degradado deriva del color: con un id fijo, dos TrendChart de
+  // colores distintos en la misma página (Financiera tiene dos) compartirían
+  // <defs> y el segundo se pintaría con el relleno del primero.
+  const fillId = `trendFill-${color.replace(/[^a-zA-Z0-9]/g, "")}`;
+
   return (
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <defs>
-          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.28} />
+          <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+            <stop
+              offset="0%"
+              stopColor={color}
+              stopOpacity={CHART_AREA_FILL_OPACITY}
+            />
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
@@ -67,8 +81,8 @@ export function TrendChart({
           type="monotone"
           dataKey="value"
           stroke={color}
-          strokeWidth={2}
-          fill="url(#trendFill)"
+          strokeWidth={CHART_STROKE_WIDTH}
+          fill={`url(#${fillId})`}
           connectNulls
         />
       </AreaChart>

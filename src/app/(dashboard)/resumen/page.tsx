@@ -26,6 +26,7 @@ import {
   formatNumberDelta,
   formatPercent,
 } from "@/lib/kpiHelpers";
+import { CAT, GASTO, INGRESO, NEUTRO } from "@/lib/chartColors";
 import type { DBKpiData } from "@/types/kpi";
 
 export default function ResumenPage() {
@@ -292,8 +293,8 @@ export default function ResumenPage() {
             <MultiTrendChart
               data={ingresosMrrSeries}
               series={[
-                { key: "ingresos_netos", label: "Ingresos netos", color: "#1e9e3a" },
-                { key: "MRR", label: "MRR", color: "#ffc400" },
+                { key: "ingresos_netos", label: "Ingresos netos", color: INGRESO.fuerte },
+                { key: "MRR", label: "MRR", color: INGRESO.medio },
               ]}
               valueFormatter={(v) => formatCurrency(v)}
             />
@@ -310,10 +311,10 @@ export default function ResumenPage() {
               /* Recharts apila en orden de declaración: el primero abajo. Para
                  que "nuevos" quede ARRIBA, va declarado último. */
               bars={[
-                { key: "pedidos_recurrentes", label: "Pedidos recurrentes", color: "#1e9e3a" },
-                { key: "pedidos_nuevos", label: "Pedidos nuevos", color: "#ffc400" },
+                { key: "pedidos_recurrentes", label: "Pedidos recurrentes", color: CAT.verdeClaro },
+                { key: "pedidos_nuevos", label: "Pedidos nuevos", color: CAT.oro },
               ]}
-              line={{ key: "AOV", label: "AOV", color: "#143a24" }}
+              line={{ key: "AOV", label: "AOV", color: INGRESO.base }}
               barFormatter={(v) => formatNumber(v)}
               lineFormatter={(v) => formatCurrency(v)}
             />
@@ -327,11 +328,11 @@ export default function ResumenPage() {
             <ComposedBarLineChart
               data={clientesRows}
               bars={[
-                { key: "clientes_nuevos", label: "Nuevos", color: "#1e9e3a" },
-                { key: "clientes_recurrentes", label: "Recurrentes", color: "#8bbf9f" },
-                { key: "clientes_perdidos", label: "Perdidos", color: "#d6483c" },
+                { key: "clientes_nuevos", label: "Nuevos", color: CAT.verde },
+                { key: "clientes_recurrentes", label: "Recurrentes", color: CAT.verdeClaro },
+                { key: "clientes_perdidos", label: "Perdidos", color: GASTO.base },
               ]}
-              line={{ key: "retention_rate", label: "Retención", color: "#143a24" }}
+              line={{ key: "retention_rate", label: "Retención", color: NEUTRO.ink }}
               barFormatter={(v) => formatNumber(v)}
               lineFormatter={(v) => formatPercent(v)}
             />

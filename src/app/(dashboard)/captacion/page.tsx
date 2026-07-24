@@ -22,18 +22,24 @@ import {
   formatNumber,
   formatPercent,
 } from "@/lib/kpiHelpers";
+import { CANAL, CAT, GASTO, INGRESO } from "@/lib/chartColors";
 import type { DBKpiData, MetricValue } from "@/types/kpi";
 
-/** Colores de identidad por canal (barras/dona/pestañitas). */
+/**
+ * Identidad por canal (barras/dona/pestañitas), desde la paleta central.
+ * Google y Meta son CATEGORÍAS, no ingresos ni gastos: van en verde/oro y dejan
+ * el azul y el rojo reservados a su significado (ver src/lib/chartColors.ts).
+ * En los combinados, la barra usa el tono claro y su línea el base, para que la
+ * correspondencia barra↔línea del canal se lea por hue.
+ */
 const C = {
-  google: "#1e9e3a", // verde
-  meta: "#eab308", // ámbar
-  otros: "#94a3b8", // gris pizarra
-  // Barras pastel + líneas del mismo hue, más oscuras, para los gráficos combinados.
-  googleBar: "#a9d5b5",
-  googleLine: "#14803a",
-  metaBar: "#ffe08a",
-  metaLine: "#b8860b",
+  google: CANAL.google,
+  meta: CANAL.meta,
+  otros: CANAL.otros,
+  googleBar: CANAL.googleSuave,
+  googleLine: CANAL.google,
+  metaBar: CANAL.metaSuave,
+  metaLine: CANAL.meta,
 };
 
 /** Suma dos métricas tratando null como 0, salvo que AMBAS sean null. */
@@ -322,9 +328,11 @@ export default function CaptacionPage() {
             <MultiTrendChart
               data={mixRows}
               series={[
-                { key: "AOV_nuevos", label: "AOV nuevos", color: C.google },
-                { key: "CAC", label: "CAC", color: "#d6483c" },
-                { key: "CPL_ads", label: "CPL ads", color: "#e07a1f" },
+                /* AOV nuevos es dinero que ENTRA por pedido → azul. CAC y CPL
+                   son categorías (no gasto bruto): verde y oro. */
+                { key: "AOV_nuevos", label: "AOV nuevos", color: INGRESO.base },
+                { key: "CAC", label: "CAC", color: CAT.verde },
+                { key: "CPL_ads", label: "CPL ads", color: CAT.oro },
               ]}
               valueFormatter={(v) => formatCurrency(v)}
             />

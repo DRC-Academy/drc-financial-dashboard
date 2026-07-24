@@ -26,6 +26,7 @@ import {
   formatPercent,
 } from "@/lib/kpiHelpers";
 import type { SemaforoColor } from "@/lib/kpiHelpers";
+import { CAT, GASTO, INGRESO, NEUTRO } from "@/lib/chartColors";
 import type {
   CancelacionRow,
   CohortData,
@@ -264,10 +265,10 @@ export default function RetencionPage() {
               data={movRows}
               stacked
               bars={[
-                { key: "clientes_recurrentes", label: "Recurrentes", color: "#1e9e3a" },
-                { key: "clientes_nuevos", label: "Nuevos", color: "#ffc400" },
+                { key: "clientes_recurrentes", label: "Recurrentes", color: CAT.verdeClaro },
+                { key: "clientes_nuevos", label: "Nuevos", color: CAT.oro },
               ]}
-              line={{ key: "retention_rate", label: "Retención", color: "#143a24" }}
+              line={{ key: "retention_rate", label: "Retención", color: NEUTRO.ink }}
               barFormatter={(v) => formatNumber(v)}
               lineFormatter={(v) => formatPercent(v)}
             />
@@ -282,8 +283,10 @@ export default function RetencionPage() {
             <MultiTrendChart
               data={permRows}
               series={[
-                { key: "permanencia", label: "Permanencia", color: "#1e9e3a" },
-                { key: "permanencia_perdidos", label: "Permanencia perdidos", color: "#d6483c" },
+                /* Permanencia es una DURACIÓN, no una pérdida de dinero: va en
+                   categorías (verde/oro) y deja el rojo para el churn de abajo. */
+                { key: "permanencia", label: "Permanencia", color: CAT.verde },
+                { key: "permanencia_perdidos", label: "Permanencia perdidos", color: CAT.oro },
               ]}
               valueFormatter={(v) => `${formatNumber(v)} m`}
             />
@@ -298,8 +301,8 @@ export default function RetencionPage() {
             <MultiTrendChart
               data={churnRows}
               series={[
-                { key: "clientes_churn", label: "Churn clientes", color: "#d6483c" },
-                { key: "MRR_churn", label: "Churn MRR", color: "#e07a1f" },
+                { key: "clientes_churn", label: "Churn clientes", color: GASTO.base },
+                { key: "MRR_churn", label: "Churn MRR", color: GASTO.fuerte },
               ]}
               valueFormatter={(v) => formatPercent(v)}
             />
@@ -313,8 +316,8 @@ export default function RetencionPage() {
           >
             <ComposedBarAreaChart
               data={arpcLtvRows}
-              bar={{ key: "ARPC", label: "ARPC", color: "#a9d5b5" }}
-              area={{ key: "LTV", label: "LTV", color: "#14803a" }}
+              bar={{ key: "ARPC", label: "ARPC", color: INGRESO.suave }}
+              area={{ key: "LTV", label: "LTV", color: INGRESO.fuerte }}
               barFormatter={(v) => formatCurrency(v)}
               areaFormatter={(v) => formatCurrency(v)}
             />
@@ -363,7 +366,7 @@ export default function RetencionPage() {
           {/* --- C10 · Motivos de cancelación + cupones --- */}
           <div className="grid lg:grid-cols-2 gap-4">
             <Panel title="Motivos de cancelación" description="Conteo por motivo declarado">
-              <RankedBars items={motivos} color="#d6483c" />
+              <RankedBars items={motivos} color={GASTO.base} />
             </Panel>
             <Panel
               title="Cupones de retención"

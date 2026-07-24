@@ -12,6 +12,11 @@ import {
   CartesianGrid,
 } from "recharts";
 import { EmptyState } from "./EmptyState";
+import {
+  CHART_AREA_FILL_OPACITY,
+  CHART_BAR_RADIUS,
+  CHART_STROKE_WIDTH,
+} from "@/lib/chartColors";
 
 export interface ComposedBarAreaPoint {
   month: string;
@@ -54,7 +59,11 @@ export function ComposedBarAreaChart({
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id={`barArea-${area.key}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={area.color} stopOpacity={0.28} />
+            <stop
+              offset="0%"
+              stopColor={area.color}
+              stopOpacity={CHART_AREA_FILL_OPACITY}
+            />
             <stop offset="100%" stopColor={area.color} stopOpacity={0} />
           </linearGradient>
         </defs>
@@ -105,7 +114,7 @@ export function ComposedBarAreaChart({
           dataKey={bar.key}
           name={bar.label}
           fill={bar.color}
-          radius={[4, 4, 0, 0]}
+          radius={CHART_BAR_RADIUS}
         />
         <Area
           yAxisId="right"
@@ -113,7 +122,7 @@ export function ComposedBarAreaChart({
           dataKey={area.key}
           name={area.label}
           stroke={area.color}
-          strokeWidth={2}
+          strokeWidth={CHART_STROKE_WIDTH}
           fill={`url(#barArea-${area.key})`}
           connectNulls
         />

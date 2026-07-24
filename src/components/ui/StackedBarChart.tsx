@@ -11,16 +11,17 @@ import {
   CartesianGrid,
 } from "recharts";
 import { EmptyState } from "./EmptyState";
+import {
+  CATEGORIA,
+  NEUTRO,
+  CHART_BAR_RADIUS,
+  CHART_STACK_GAP,
+} from "@/lib/chartColors";
 
-const PALETTE = [
-  "#1e9e3a",
-  "#ffc400",
-  "#3f7a53",
-  "#d6483c",
-  "#8bbf9f",
-  "#a8842f",
-  "#5d7a68",
-];
+/** Fallback cuando la página no pasa `colors`: orden fijo de CATEGORIA y, a
+ *  partir del 4º, el gris de "otros" (ver nota de chartColors sobre por qué no
+ *  hay un 4º slot categórico). */
+const PALETTE = [...CATEGORIA, NEUTRO.gris];
 
 export function StackedBarChart({
   data,
@@ -41,7 +42,8 @@ export function StackedBarChart({
   );
   if (!hasData || keys.length === 0) return <EmptyState />;
 
-  const colorAt = (i: number) => colors?.[i] ?? PALETTE[i % PALETTE.length];
+  const colorAt = (i: number) =>
+    colors?.[i] ?? PALETTE[Math.min(i, PALETTE.length - 1)];
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -76,7 +78,8 @@ export function StackedBarChart({
             dataKey={k}
             stackId="a"
             fill={colorAt(i)}
-            radius={i === keys.length - 1 ? [4, 4, 0, 0] : undefined}
+            {...CHART_STACK_GAP}
+            radius={i === keys.length - 1 ? CHART_BAR_RADIUS : undefined}
           />
         ))}
       </BarChart>

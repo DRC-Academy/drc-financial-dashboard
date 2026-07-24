@@ -28,6 +28,7 @@ import {
 } from "@/lib/kpiHelpers";
 import type { DBKpiData } from "@/types/kpi";
 import type { GastosData } from "@/lib/gastos";
+import { CAT, GASTO, INGRESO } from "@/lib/chartColors";
 
 export default function FinancieraPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
@@ -131,12 +132,12 @@ export default function FinancieraPage() {
             <Panel title="Ingresos acumulados">
               <TrendChart
                 data={ingresosAcumSeries}
-                color="#1e9e3a"
+                color={INGRESO.base}
                 valueFormatter={(v) => formatCurrency(v)}
               />
             </Panel>
             <Panel title="Clientes acumulados">
-              <TrendChart data={clientesAcumSeries} color="#143a24" />
+              <TrendChart data={clientesAcumSeries} color={CAT.verde} />
             </Panel>
           </div>
 
@@ -148,12 +149,12 @@ export default function FinancieraPage() {
               data={acumComparado}
               left={{
                 label: "Ingresos acumulados",
-                color: "#1e9e3a",
+                color: INGRESO.base,
                 valueFormatter: (v) => formatCurrency(v),
               }}
               right={{
                 label: "Clientes acumulados",
-                color: "#143a24",
+                color: CAT.verde,
                 valueFormatter: (v) => formatNumber(v),
               }}
             />
@@ -190,8 +191,11 @@ export default function FinancieraPage() {
                       </div>
                       <div className="h-2 rounded-full bg-drc-bg overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-drc-green-deep"
-                          style={{ width: `${(cat.monto / maxGasto) * 100}%` }}
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${(cat.monto / maxGasto) * 100}%`,
+                            background: GASTO.base,
+                          }}
                         />
                       </div>
                     </div>
