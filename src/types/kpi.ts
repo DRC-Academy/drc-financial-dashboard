@@ -14,6 +14,22 @@ export interface DBKpiData {
   keys: string[];
 }
 
+/**
+ * Resultado completo de leer "KPI Semanal". Misma forma que DBKpiData, pero la
+ * dimensión temporal son semanas ("2026_w31") en vez de meses. Se mantiene como
+ * tipo aparte —en vez de reusar DBKpiData con `months` lleno de semanas— para
+ * que la capa de datos no mienta sobre su granularidad; la página lo adapta con
+ * weeklyToKpiShape() y así reutiliza todos los helpers de kpiHelpers.ts.
+ */
+export interface WeeklyKpiData {
+  /** Semanas en el orden de la hoja (columna A), p. ej. "2026_w31". */
+  weeks: string[];
+  /** data[semana][clave] = valor */
+  data: Record<string, MonthRecord>;
+  /** Claves (encabezados) numéricas detectadas en la fila 1. */
+  keys: string[];
+}
+
 export interface CohortRow {
   cohort: string;
   values: MetricValue[]; // valor por mes de vida (mes 0, 1, 2, ...)

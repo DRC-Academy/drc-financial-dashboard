@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { formatPercentPoints } from "@/lib/kpiHelpers";
 import type { AlertaColor, AlertaOperativa } from "@/lib/kpiHelpers";
+import type { PeriodLabel } from "./KpiCard";
 
 /**
  * Tarjeta grande (T) de un canal de ads (Google / Meta) con la misma jerarquía
@@ -49,6 +50,7 @@ export function ChannelAdsCard({
   ingreso,
   leads,
   metrics,
+  period = "MoM",
   className,
 }: {
   title: string;
@@ -60,10 +62,15 @@ export function ChannelAdsCard({
   gastoIsGoodWhenPositive?: boolean;
   /** Segundo titular opcional (ingresos), al mismo nivel visual que el gasto. */
   ingreso?: ChannelHeadline;
-  /** Fila superior de n2: dos valores lado a lado (leads ads / leads mail). */
-  leads: [ChannelMetric, ChannelMetric];
+  /**
+   * Fila superior de n2. Con granularidad mensual son dos (leads ads / leads
+   * mail); la hoja semanal no trae ese desglose, así que admite uno solo.
+   */
+  leads: ChannelMetric[];
   /** Resto de n2, en grilla de 2 columnas. */
   metrics: ChannelMetric[];
+  /** Período contra el que compara el badge de los titulares (MoM, WoW, ...). */
+  period?: PeriodLabel;
   className?: string;
 }) {
   return (
@@ -95,8 +102,9 @@ export function ChannelAdsCard({
           value={gasto}
           mom={gastoMom}
           isGoodWhenPositive={gastoIsGoodWhenPositive}
+          period={period}
         />
-        {ingreso && <Headline {...ingreso} />}
+        {ingreso && <Headline period={period} {...ingreso} />}
       </div>
 
       {/* Leads + métricas (n2) — grilla de 2 columnas */}
@@ -112,13 +120,14 @@ export function ChannelAdsCard({
   );
 }
 
-/** Un titular n1: etiqueta pequeña + valor grande + badge MoM opcional. */
+/** Un titular n1: etiqueta pequeña + valor grande + badge de variación opcional. */
 function Headline({
   label,
   value,
   mom,
   isGoodWhenPositive = true,
-}: ChannelHeadline) {
+  period = "MoM",
+}: ChannelHeadline & { period?: PeriodLabel }) {
   const hasMom = mom !== undefined && mom !== null;
   const isPositive = (mom ?? 0) >= 0;
   const isGood = isPositive === isGoodWhenPositive;
@@ -140,7 +149,7 @@ function Headline({
             )}
           >
             {isPositive ? "▲" : "▼"} {formatPercentPoints(Math.abs(mom as number))}{" "}
-            <span className="opacity-70">MoM</span>
+            <span className="opacity-70">{period}</span>
           </span>
         )}
       </div>

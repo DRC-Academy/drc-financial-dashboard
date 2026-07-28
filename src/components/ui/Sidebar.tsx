@@ -7,11 +7,22 @@ import clsx from "clsx";
 const NAV = [
   { href: "/resumen", label: "Resumen ejecutivo", eyebrow: "01" },
   { href: "/captacion", label: "Captación", eyebrow: "02" },
+  { href: "/captacion-semanal", label: "Captación semanal", eyebrow: "02s" },
   { href: "/ingresos", label: "Ingresos", eyebrow: "03" },
   { href: "/retencion", label: "Retención", eyebrow: "04" },
   { href: "/financiera", label: "Situación financiera", eyebrow: "05" },
   { href: "/producto", label: "Producto", eyebrow: "06" },
 ];
+
+/**
+ * Ruta activa. NO alcanza con startsWith a secas: "/captacion-semanal" empieza
+ * con "/captacion" y encendería las dos entradas a la vez. Se exige coincidencia
+ * exacta o un separador de ruta detrás, para seguir marcando las sub-rutas.
+ */
+function isActive(pathname: string | null, href: string): boolean {
+  if (!pathname) return false;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -32,7 +43,7 @@ export function Sidebar() {
 
       <nav className="flex-1 px-3 space-y-1">
         {NAV.map((item) => {
-          const active = pathname?.startsWith(item.href);
+          const active = isActive(pathname, item.href);
           return (
             <Link
               key={item.href}
