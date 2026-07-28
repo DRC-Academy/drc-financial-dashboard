@@ -138,7 +138,7 @@ export default function CaptacionSemanalPage() {
       <PageHeader
         eyebrow="02s · Captación semanal"
         title="De dónde vienen los alumnos y a qué costo, semana a semana"
-        description="Elegí la semana para las tarjetas; cada gráfico tiene su propio rango. Las variaciones comparan contra la semana anterior con dato (WoW)."
+        description="Elegí la semana para las tarjetas; cada gráfico tiene su propio rango. Las semanas van de lunes a domingo y las variaciones comparan contra la semana anterior con dato (WoW)."
         right={
           <div className="flex flex-wrap items-center gap-3">
             {hasAnyData && (
@@ -164,7 +164,7 @@ export default function CaptacionSemanalPage() {
               parciales se leen como un desplome real. */}
           {activeEnCurso && (
             <div className="rounded-lg border border-drc-yellow/40 bg-drc-yellow/10 px-4 py-2.5 text-xs text-drc-ink">
-              <strong>{weekLongLabel(activeWeek)}</strong> está en curso: la hoja
+              <strong>{weekLongLabel(activeWeek)}</strong> — en curso: la hoja
               todavía se está llenando, así que sus valores son parciales y la
               comparación WoW no es representativa.
             </div>

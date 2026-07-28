@@ -60,17 +60,44 @@ export function parseWeekId(id: string): ParsedWeek | null {
   return { year, week };
 }
 
+const MESES_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+const MESES_ES_CORTO = [
+  "ene", "feb", "mar", "abr", "may", "jun",
+  "jul", "ago", "sep", "oct", "nov", "dic",
+];
+
+const DIA_MS = 86_400_000;
+
 /**
- * Etiquetas cortas para los ejes de los gráficos y el desplegable.
+ * Lunes y domingo (en UTC) de una semana ISO: la semana 1 es la que contiene el
+ * primer jueves del año, así que el lunes de la semana 1 se obtiene retrocediendo
+ * desde el 4 de enero hasta su lunes.
  *
- * Devuelve "S31" cuando todas las semanas del dataset son del mismo año, y
- * "S31 '26" cuando hay más de uno, para que dos semanas homónimas de años
- * distintos no colapsen en la misma categoría del eje.
+ * Que la hoja use semana ISO de lunes a domingo NO es una suposición: se
+ * verificó contra la columna `semana` de "KPI Diario", donde las 53 semanas
+ * empiezan lunes y terminan domingo, y contra los totales de "KPI Semanal", que
+ * cuadran al céntimo con la suma de los días de 2026 de ese rango.
+ */
+export function isoWeekRange(year: number, week: number): { start: Date; end: Date } {
+  const jan4 = Date.UTC(year, 0, 4);
+  const jan4Dow = new Date(jan4).getUTCDay() || 7; // 1=lunes … 7=domingo
+  const week1Monday = jan4 - (jan4Dow - 1) * DIA_MS;
+  const start = new Date(week1Monday + (week - 1) * 7 * DIA_MS);
+  const end = new Date(start.getTime() + 6 * DIA_MS);
+  return { start, end };
+}
+
+/**
+ * Etiquetas cortas para los ejes de los gráficos: el lunes de cada semana
+ * ("13 jul"). Se prefiere la fecha al número de semana porque es lo que permite
+ * cruzar el gráfico con el desplegable, que también habla en fechas.
  *
- * A propósito NO deriva la fecha de inicio de semana: la hoja sólo guarda el
- * número, y no está confirmado si lo calcula con semana ISO (lunes) o con el
- * WEEKNUM por defecto de Sheets (domingo). Mostrar un rango de fechas derivado
- * sería inventar una precisión que el dato no tiene.
+ * Si el dataset abarca más de un año se agrega el año ("13 jul '26") para que
+ * dos semanas homónimas no colapsen en la misma categoría del eje.
  */
 export function buildWeekLabels(ids: string[]): Record<string, string> {
   const parsed = ids.map((id) => ({ id, p: parseWeekId(id) }));
@@ -83,17 +110,43 @@ export function buildWeekLabels(ids: string[]): Record<string, string> {
       labels[id] = id; // formato inesperado: se muestra crudo antes que romper
       continue;
     }
+    const { start } = isoWeekRange(p.year, p.week);
+    const base = `${start.getUTCDate()} ${MESES_ES_CORTO[start.getUTCMonth()]}`;
     labels[id] = multiYear
-      ? `S${p.week} '${String(p.year).slice(-2)}`
-      : `S${p.week}`;
+      ? `${base} '${String(start.getUTCFullYear()).slice(-2)}`
+      : base;
   }
   return labels;
 }
 
-/** Etiqueta larga para títulos: "Semana 31 · 2026". */
+/**
+ * Etiqueta larga y legible del período, para el desplegable y los títulos:
+ *   mismo mes      → "Semana del 13 al 19 de julio"
+ *   distinto mes   → "Semana del 29 de junio al 5 de julio"
+ *   distinto año   → "Semana del 29 de diciembre de 2025 al 4 de enero de 2026"
+ *
+ * El año sólo aparece cuando la semana cruza de un año a otro (el caso de la
+ * semana 1): repetirlo en las otras 51 sería ruido.
+ */
 export function weekLongLabel(id: string): string {
   const p = parseWeekId(id);
-  return p ? `Semana ${p.week} · ${p.year}` : id;
+  if (!p) return id;
+
+  const { start, end } = isoWeekRange(p.year, p.week);
+  const d1 = start.getUTCDate();
+  const d2 = end.getUTCDate();
+  const m1 = MESES_ES[start.getUTCMonth()];
+  const m2 = MESES_ES[end.getUTCMonth()];
+  const y1 = start.getUTCFullYear();
+  const y2 = end.getUTCFullYear();
+
+  if (y1 !== y2) {
+    return `Semana del ${d1} de ${m1} de ${y1} al ${d2} de ${m2} de ${y2}`;
+  }
+  if (m1 !== m2) {
+    return `Semana del ${d1} de ${m1} al ${d2} de ${m2}`;
+  }
+  return `Semana del ${d1} al ${d2} de ${m1}`;
 }
 
 /**
