@@ -48,6 +48,16 @@ function sumOrNull(a: MetricValue, b: MetricValue): MetricValue {
   return (a ?? 0) + (b ?? 0);
 }
 
+/**
+ * Ticket medio de un canal: ingresos / ventas. Es lo único comparable que se
+ * puede dar de "Otros", que no tiene inversión en ads y por lo tanto tampoco
+ * CPL, CAC ni ROI.
+ */
+function ticketMedio(ingresos: MetricValue, ventas: MetricValue): MetricValue {
+  if (ingresos === null || ventas === null || ventas === 0) return null;
+  return ingresos / ventas;
+}
+
 export default function CaptacionPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
     "/api/kpi",
@@ -76,6 +86,11 @@ export default function CaptacionPage() {
   const roiCapt = getValueAtMonth(kpi, "ROI_capt", activeMonth);
 
   // ---- Dona · distribución de ventas del mes seleccionado ----
+  // "Otros" NO se deriva como ventas - google - meta: DB_KPI trae la columna
+  // ventas_otros ya calculada, y cuadra exacta con esa resta en los meses que
+  // tienen el desglose cargado (jun-26: 42 = 22+13+7; jul-26: 32 = 9+14+9). Se
+  // usa la columna para no discrepar del Sheet si el criterio de atribución
+  // cambia allí.
   const ventasSlices = [
     {
       name: "Google Ads",
@@ -113,6 +128,7 @@ export default function CaptacionPage() {
     month,
     ventas_google: kpi.data[month]?.["ventas_google"] ?? null,
     ventas_meta: kpi.data[month]?.["ventas_meta"] ?? null,
+    ventas_otros: kpi.data[month]?.["ventas_otros"] ?? null,
     CAC_google: kpi.data[month]?.["CAC_google"] ?? null,
     CAC_meta: kpi.data[month]?.["CAC_meta"] ?? null,
   }));
@@ -275,6 +291,35 @@ export default function CaptacionPage() {
                 { label: "ROI", value: formatPercent(getRoiCanal(kpi, activeMonth, "meta")) },
               ]}
             />
+            {/* Otros: el resto de la captación. Va a ancho completo porque tiene
+                bastante menos que contar que Google y Meta — sin inversión en
+                ads no hay CPL, CAC ni ROI que mostrar. */}
+            <ChannelAdsCard
+              className="lg:col-span-2"
+              title="Otros canales"
+              accentColor={C.otros}
+              ingreso={{
+                label: "Ingresos",
+                value: formatCurrency(getValueAtMonth(kpi, "ingresos_otros", activeMonth)),
+                mom: getMoMAtMonth(kpi, "ingresos_otros", activeMonth),
+              }}
+              leads={[]}
+              metrics={[
+                {
+                  label: "Ventas",
+                  value: formatNumber(getValueAtMonth(kpi, "ventas_otros", activeMonth)),
+                },
+                {
+                  label: "Ticket medio",
+                  value: formatCurrency(
+                    ticketMedio(
+                      getValueAtMonth(kpi, "ingresos_otros", activeMonth),
+                      getValueAtMonth(kpi, "ventas_otros", activeMonth)
+                    )
+                  ),
+                },
+              ]}
+            />
           </div>
 
           {/* --- Gráfico · Leads por canal + CPL --- */}
@@ -301,7 +346,7 @@ export default function CaptacionPage() {
           {/* --- Gráfico · Ventas por canal + CAC --- */}
           <Panel
             title="Ventas por canal en el tiempo"
-            description="Barras: ventas por canal (eje izq.). Líneas: CAC de cada canal (€, eje der.)."
+            description="Barras: ventas por canal (eje izq.), incluido Otros — lo que no vino de Google ni de Meta. Líneas: CAC de cada canal (€, eje der.); Otros no tiene CAC porque no tiene inversión en ads que atribuirle."
             action={<RangeFilter value={ventasRange} onChange={setVentasRange} />}
           >
             <MultiBarLineChart
@@ -309,6 +354,7 @@ export default function CaptacionPage() {
               bars={[
                 { key: "ventas_google", label: "Ventas Google", color: C.googleBar },
                 { key: "ventas_meta", label: "Ventas Meta", color: C.metaBar },
+                { key: "ventas_otros", label: "Ventas Otros", color: C.otros },
               ]}
               lines={[
                 { key: "CAC_google", label: "CAC Google", color: C.googleLine },

@@ -10,7 +10,10 @@ import type { PeriodLabel } from "./KpiCard";
  * tipográfica que KpiCard:
  *   - título del canal (label),
  *   - GASTO como dato prominente (n1, ~text-3xl) con badge MoM; opcionalmente un
- *     segundo titular (INGRESOS) al MISMO nivel, a su lado,
+ *     segundo titular (INGRESOS) al MISMO nivel, a su lado. El gasto es OPCIONAL:
+ *     el canal "Otros" agrupa lo que no vino de Google ni de Meta y por lo tanto
+ *     no tiene inversión en ads que atribuirle, así que su único titular son los
+ *     ingresos. Se omite en vez de mostrar "—" para no sugerir un dato que falta.
  *   - resto de métricas como n2 en una grilla de 2 columnas (leads ads / mail
  *     en la primera fila), tamaños de letra menores que el n1.
  *   - cada n2 puede llevar un chip de alerta (EN OBJETIVO / BIEN / ...).
@@ -56,8 +59,9 @@ export function ChannelAdsCard({
   title: string;
   /** Color (hex) de la pestañita lateral e identidad del canal. */
   accentColor: string;
-  gastoLabel: string;
-  gasto: string;
+  /** Titular de gasto. Se omite en canales sin inversión atribuible (ver arriba). */
+  gastoLabel?: string;
+  gasto?: string;
   gastoMom?: number | null;
   gastoIsGoodWhenPositive?: boolean;
   /** Segundo titular opcional (ingresos), al mismo nivel visual que el gasto. */
@@ -96,16 +100,28 @@ export function ChannelAdsCard({
       </div>
 
       {/* Titulares — n1 prominentes: gasto y (opcional) ingresos al mismo nivel */}
-      <div className={clsx("mt-3 grid gap-4", ingreso ? "grid-cols-2" : "grid-cols-1")}>
-        <Headline
-          label={gastoLabel}
-          value={gasto}
-          mom={gastoMom}
-          isGoodWhenPositive={gastoIsGoodWhenPositive}
-          period={period}
-        />
-        {ingreso && <Headline period={period} {...ingreso} />}
-      </div>
+      {(() => {
+        const tieneGasto = gasto !== undefined;
+        return (
+          <div
+            className={clsx(
+              "mt-3 grid gap-4",
+              tieneGasto && ingreso ? "grid-cols-2" : "grid-cols-1"
+            )}
+          >
+            {tieneGasto && (
+              <Headline
+                label={gastoLabel ?? "Inversión"}
+                value={gasto}
+                mom={gastoMom}
+                isGoodWhenPositive={gastoIsGoodWhenPositive}
+                period={period}
+              />
+            )}
+            {ingreso && <Headline period={period} {...ingreso} />}
+          </div>
+        );
+      })()}
 
       {/* Leads + métricas (n2) — grilla de 2 columnas */}
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-drc-line pt-4">

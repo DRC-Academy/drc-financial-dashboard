@@ -31,7 +31,7 @@ import {
   weeklyToKpiShape,
 } from "@/lib/kpiSemanalHelpers";
 import { CANAL, CAT, INGRESO } from "@/lib/chartColors";
-import type { WeeklyKpiData } from "@/types/kpi";
+import type { MetricValue, WeeklyKpiData } from "@/types/kpi";
 
 /**
  * Captación semanal — misma lectura que la página de Captación mensual, pero
@@ -41,6 +41,16 @@ import type { WeeklyKpiData } from "@/types/kpi";
  *  - ROI_capt no existe como columna y se deriva (ver getRoiCaptacion);
  *  - las variaciones son semana contra semana → los badges rotulan WoW.
  */
+
+/**
+ * Ticket medio de un canal: ingresos / ventas. Idem Captación mensual: es lo
+ * único comparable que se puede dar de "Otros", que no tiene inversión en ads y
+ * por lo tanto tampoco CPL, CAC ni ROI.
+ */
+function ticketMedio(ingresos: MetricValue, ventas: MetricValue): MetricValue {
+  if (ingresos === null || ventas === null || ventas === 0) return null;
+  return ingresos / ventas;
+}
 
 /** Identidad por canal, desde la paleta central (idem Captación mensual). */
 const C = {
@@ -89,6 +99,10 @@ export default function CaptacionSemanalPage() {
   const roiCapt = getRoiCaptacion(kpi, activeWeek);
 
   // ---- Dona · distribución de ventas de la semana seleccionada ----
+  // Igual que en la mensual, "Otros" sale de la columna ventas_otros de la hoja
+  // (no de ventas_total - google - meta). Desde w13 las tres columnas suman
+  // exacto el total semanal; antes de w12 el desglose por canal todavía no se
+  // cargaba y la hoja deja los tres canales en 0.
   const ventasSlices = [
     {
       name: "Google Ads",
@@ -122,6 +136,7 @@ export default function CaptacionSemanalPage() {
     month: labels[week],
     ventas_google: kpi.data[week]?.["ventas_google"] ?? null,
     ventas_meta: kpi.data[week]?.["ventas_meta"] ?? null,
+    ventas_otros: kpi.data[week]?.["ventas_otros"] ?? null,
     CAC_google: kpi.data[week]?.["CAC_google"] ?? null,
     CAC_meta: kpi.data[week]?.["CAC_meta"] ?? null,
   }));
@@ -290,6 +305,35 @@ export default function CaptacionSemanalPage() {
                 { label: "ROI", value: formatPercent(getRoiCanal(kpi, activeWeek, "meta")) },
               ]}
             />
+            {/* Otros: idem mensual — a ancho completo y sin CPL/CAC/ROI, porque
+                no tiene inversión en ads que atribuirle. */}
+            <ChannelAdsCard
+              className="lg:col-span-2"
+              title="Otros canales"
+              accentColor={C.otros}
+              period="WoW"
+              ingreso={{
+                label: "Ingresos",
+                value: formatCurrency(getValueAtMonth(kpi, "ingresos_otros", activeWeek)),
+                mom: getMoMAtMonth(kpi, "ingresos_otros", activeWeek),
+              }}
+              leads={[]}
+              metrics={[
+                {
+                  label: "Ventas",
+                  value: formatNumber(getValueAtMonth(kpi, "ventas_otros", activeWeek)),
+                },
+                {
+                  label: "Ticket medio",
+                  value: formatCurrency(
+                    ticketMedio(
+                      getValueAtMonth(kpi, "ingresos_otros", activeWeek),
+                      getValueAtMonth(kpi, "ventas_otros", activeWeek)
+                    )
+                  ),
+                },
+              ]}
+            />
           </div>
 
           {/* --- Gráfico · Leads por canal + CPL --- */}
@@ -322,7 +366,7 @@ export default function CaptacionSemanalPage() {
           {/* --- Gráfico · Ventas por canal + CAC --- */}
           <Panel
             title="Ventas por canal en el tiempo"
-            description="Barras: ventas por canal (eje izq.). Líneas: CAC de cada canal (€, eje der.)."
+            description="Barras: ventas por canal (eje izq.), incluido Otros — lo que no vino de Google ni de Meta. Líneas: CAC de cada canal (€, eje der.); Otros no tiene CAC porque no tiene inversión en ads que atribuirle."
             action={
               <RangeFilter
                 value={ventasRange}
@@ -336,6 +380,7 @@ export default function CaptacionSemanalPage() {
               bars={[
                 { key: "ventas_google", label: "Ventas Google", color: C.googleBar },
                 { key: "ventas_meta", label: "Ventas Meta", color: C.metaBar },
+                { key: "ventas_otros", label: "Ventas Otros", color: C.otros },
               ]}
               lines={[
                 { key: "CAC_google", label: "CAC Google", color: C.googleLine },

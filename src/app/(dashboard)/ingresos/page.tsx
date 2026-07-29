@@ -37,6 +37,9 @@ const C = {
   canalGoogle: INGRESO.fuerte,
   canalMeta: INGRESO.medio,
   canalOtros: INGRESO.suave,
+  /* No es un canal: es el ingreso que ninguna captación explica (recurrente).
+     Va en el gris acromático justamente para no leerse como un cuarto canal. */
+  canalNoAtribuido: NEUTRO.gris,
 };
 
 /** Resta a - b tratando null como 0, salvo que AMBOS sean null → null. */
@@ -133,17 +136,25 @@ export default function IngresosPage() {
   }));
 
   // ---- Gráfico · ingresos por canal (apilado) ----
+  // "ingresos_otros" SÍ es una columna de DB_KPI: es un canal de captación real
+  // (lo que entró sin venir de Google ni de Meta), no el resto de la resta. Antes
+  // se derivaba como ingresos_netos - google - meta, y eso lo inflaba con todo el
+  // ingreso RECURRENTE: en jul-26 daba 15.023 € "de otros canales" cuando el
+  // canal Otros fueron 1.746 € (los tres canales suman 6.166 € sobre 19.444 € de
+  // ingresos netos). Ese resto es su propio segmento, y no es un canal.
   const canalRows = applyRange(months, canalRange).map((month) => {
     const netos = kpi.data[month]?.["ingresos_netos"] ?? null;
     const g = kpi.data[month]?.["ingresos_google"] ?? null;
     const m = kpi.data[month]?.["ingresos_meta"] ?? null;
-    // "ingresos_otros" no existe en DB_KPI: es el resto no atribuido a Google/Meta.
-    const otros = netos === null ? null : (netos ?? 0) - (g ?? 0) - (m ?? 0);
+    const otros = kpi.data[month]?.["ingresos_otros"] ?? null;
+    const noAtribuido =
+      netos === null ? null : netos - (g ?? 0) - (m ?? 0) - (otros ?? 0);
     return {
       month,
       ingresos_google: g,
       ingresos_meta: m,
       ingresos_otros: otros,
+      ingresos_no_atribuido: noAtribuido,
     };
   });
 
@@ -312,13 +323,24 @@ export default function IngresosPage() {
           {/* --- Gráfico · ingresos por canal --- */}
           <Panel
             title="Ingresos por canal"
-            description="Barras apiladas: ingresos por canal (Google, Meta y otros = resto no atribuido a Google/Meta)."
+            description="Barras apiladas hasta los ingresos netos del mes. Los tres primeros tramos son los canales de captación (Google, Meta y Otros, tal como los atribuye el Sheet); el gris es el ingreso que no viene de captación de ese mes — sobre todo recurrente — y por eso no es un canal."
             action={<RangeFilter value={canalRange} onChange={setCanalRange} />}
           >
             <StackedBarChart
               data={canalRows}
-              keys={["ingresos_google", "ingresos_meta", "ingresos_otros"]}
-              colors={[C.canalGoogle, C.canalMeta, C.canalOtros]}
+              keys={[
+                "ingresos_google",
+                "ingresos_meta",
+                "ingresos_otros",
+                "ingresos_no_atribuido",
+              ]}
+              colors={[
+                C.canalGoogle,
+                C.canalMeta,
+                C.canalOtros,
+                C.canalNoAtribuido,
+              ]}
+              labels={["Google", "Meta", "Otros", "No atribuido a captación"]}
               valueFormatter={(v) => formatCurrency(v)}
             />
           </Panel>

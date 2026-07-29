@@ -27,6 +27,7 @@ export function StackedBarChart({
   data,
   keys,
   colors,
+  labels,
   height = 260,
   valueFormatter,
 }: {
@@ -34,6 +35,11 @@ export function StackedBarChart({
   keys: string[];
   /** Colores por serie (mismo orden que `keys`). Si falta, cae a PALETTE. */
   colors?: string[];
+  /**
+   * Rótulos de leyenda y tooltip (mismo orden que `keys`). Si falta, se muestra
+   * la clave cruda del Sheet, que es el comportamiento histórico.
+   */
+  labels?: string[];
   height?: number;
   valueFormatter?: (v: number) => string;
 }) {
@@ -76,6 +82,7 @@ export function StackedBarChart({
           <Bar
             key={k}
             dataKey={k}
+            name={labels?.[i] ?? k}
             stackId="a"
             fill={colorAt(i)}
             {...CHART_STACK_GAP}
