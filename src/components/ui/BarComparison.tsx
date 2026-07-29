@@ -23,11 +23,21 @@ export function BarComparison({
   series,
   height = 240,
   valueFormatter,
+  showLegend = true,
+  yAxisWidth = 48,
 }: {
   data: ComparisonPoint[];
   series: { key: string; label: string; color: string }[];
   height?: number;
   valueFormatter?: (v: number) => string;
+  /** Ancho del eje Y. Ver la nota de MultiTrendChart: 48px recorta los importes grandes. */
+  yAxisWidth?: number;
+  /**
+   * Con UNA sola serie la leyenda no identifica nada que el título del panel no
+   * diga ya, así que se puede apagar. Con 2+ series es obligatoria (la identidad
+   * nunca puede depender sólo del color) y por eso el default es true.
+   */
+  showLegend?: boolean;
 }) {
   const hasData = data.some((row) =>
     series.some((s) => row[s.key] !== null && row[s.key] !== undefined)
@@ -48,7 +58,7 @@ export function BarComparison({
           tick={{ fontSize: 11, fill: "var(--drc-ink-soft)" }}
           axisLine={false}
           tickLine={false}
-          width={48}
+          width={yAxisWidth}
           tickFormatter={(v) => (valueFormatter ? valueFormatter(v) : v)}
         />
         <Tooltip
@@ -60,7 +70,7 @@ export function BarComparison({
             border: "1px solid var(--drc-line)",
           }}
         />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
+        {showLegend && <Legend wrapperStyle={{ fontSize: 12 }} />}
         {series.map((s) => (
           <Bar
             key={s.key}

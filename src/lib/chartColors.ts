@@ -58,6 +58,37 @@ export const GASTO = {
 } as const;
 
 /**
+ * CATEGORÍAS DE GASTO, en orden fijo. Cuatro slots para desglosar UN gasto en
+ * sus partidas (COGS / personal / marketing / G&A del cashflow): todas son
+ * "sale dinero", así que todas viven en la familia rojo→ámbar y ninguna se va a
+ * azul ni a verde.
+ *
+ * Es una rampa APARTE de GASTO y no una extensión suya a propósito: con
+ * fuerte/base/suave fijos no entra un 4º paso que pase los controles — el arco
+ * rojo-naranja se queda sin recorrido de luminosidad por arriba (probado:
+ * #8f2018/#d6483c/#f29431/#f7cc4b da ΔE 13.4 en visión normal entre los dos
+ * últimos, por debajo del piso de 15). Ensanchando la escalera entera sí entra.
+ *
+ * Validación (OKLCH, validador de la skill de dataviz, modo claro sobre
+ * #ffffff, TODOS los pares —no sólo los adyacentes—):
+ *   piso de croma PASS (los 4 ≥ 0.1)
+ *   visión normal  ΔE 18.3 PASS   ·   CVD ΔE 13.6 (protan) / 15.4 (tritan) PASS
+ *   banda de luminosidad: se sale por los extremos (L 0.35 y 0.86), lo mismo que
+ *     GASTO e INGRESO — es inherente a una rampa, que recorre la banda entera.
+ *   contraste sobre el panel < 3:1 en los dos pasos claros → los gráficos que la
+ *     usan llevan SIEMPRE leyenda + tooltip (y el anillo de CHART_STACK_GAP
+ *     entre porciones), que es el relieve que eso exige.
+ */
+export const GASTO_CAT = {
+  /** Coste directo del servicio (COGS). El paso más oscuro: es el que "muerde" primero al ingreso. */
+  cogs: "#6a1914",
+  personal: "#bc291b",
+  marketing: "#ec7622",
+  /** Generales y administrativos. El paso más claro y el bucket más residual. */
+  generales: "#f7cc4b",
+} as const;
+
+/**
  * Categorías que no son ni ingreso ni gasto, EN ORDEN FIJO: el slot 1 va siempre
  * a la primera serie, el 2 a la segunda, etc. Nunca se ciclan ni se reordenan al
  * filtrar — el color sigue a la entidad, no a su posición en el ranking.

@@ -27,11 +27,19 @@ export function MultiTrendChart({
   series,
   height = 240,
   valueFormatter,
+  yAxisWidth = 48,
 }: {
   data: MultiTrendPoint[];
   series: { key: string; label: string; color: string }[];
   height?: number;
   valueFormatter?: (v: number) => string;
+  /**
+   * Ancho del eje Y. Los 48px por defecto se quedan cortos en cuanto los ticks
+   * son importes de 5-6 cifras ("340.000 €"): recharts no encoge el texto, lo
+   * recorta por la izquierda y el tick se lee mal ("0.000 €"). Subilo en los
+   * gráficos de € grandes.
+   */
+  yAxisWidth?: number;
 }) {
   const hasData = data.some((row) =>
     series.some((s) => row[s.key] !== null && row[s.key] !== undefined)
@@ -52,7 +60,7 @@ export function MultiTrendChart({
           tick={{ fontSize: 11, fill: "var(--drc-ink-soft)" }}
           axisLine={false}
           tickLine={false}
-          width={48}
+          width={yAxisWidth}
           tickFormatter={(v) => (valueFormatter ? valueFormatter(v) : v)}
         />
         <Tooltip

@@ -30,6 +30,7 @@ export function StackedBarChart({
   labels,
   height = 260,
   valueFormatter,
+  yAxisWidth = 48,
 }: {
   data: Record<string, string | number | null>[];
   keys: string[];
@@ -42,6 +43,8 @@ export function StackedBarChart({
   labels?: string[];
   height?: number;
   valueFormatter?: (v: number) => string;
+  /** Ancho del eje Y. Ver la nota de MultiTrendChart: 48px recorta los importes grandes. */
+  yAxisWidth?: number;
 }) {
   const hasData = data.some((row) =>
     keys.some((k) => row[k] !== null && row[k] !== undefined)
@@ -65,7 +68,7 @@ export function StackedBarChart({
           tick={{ fontSize: 11, fill: "var(--drc-ink-soft)" }}
           axisLine={false}
           tickLine={false}
-          width={48}
+          width={yAxisWidth}
           tickFormatter={(v) => (valueFormatter ? valueFormatter(v) : v)}
         />
         <Tooltip
