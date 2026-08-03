@@ -69,10 +69,17 @@ export default function ResumenPage() {
   // MRR_MoM ya es la variación calculada en el Sheet, en fracción (0.053 = 5,3%)
   // igual que el resto de tasas → ×100 para el badge, que espera puntos.
   const mrrMoM = getValueAtMonth(kpi, "MRR_MoM", activeMonth);
+  const suscActivas = getValueAtMonth(kpi, "suscripciones_activas", activeMonth);
+  const suscActivasDelta = getDeltaAtMonth(
+    kpi,
+    "suscripciones_activas",
+    activeMonth
+  );
   const churn = getValueAtMonth(kpi, "clientes_churn", activeMonth);
   const churnObj = getValueAtMonth(kpi, "churn_obj", activeMonth);
 
   // ---- Fila 4 ----
+  const arpc = getValueAtMonth(kpi, "ARPC", activeMonth);
   const ltv = getValueAtMonth(kpi, "LTV", activeMonth);
   const ltvObj = getValueAtMonth(kpi, "LTV_obj", activeMonth);
   const cpl = getValueAtMonth(kpi, "CPL_ads", activeMonth);
@@ -233,10 +240,14 @@ export default function ResumenPage() {
             <KpiCard
               className="lg:col-span-2"
               label="Suscripciones activas"
-              value={formatNumber(
-                getValueAtMonth(kpi, "suscripciones_activas", activeMonth)
-              )}
+              value={formatNumber(suscActivas)}
               mom={getMoMAtMonth(kpi, "suscripciones_activas", activeMonth)}
+              subValues={[
+                {
+                  label: "vs. mes anterior",
+                  value: formatNumberDelta(suscActivasDelta),
+                },
+              ]}
             />
             {/* clientes_churn es una TASA (0.76 → "76%"), no un conteo. */}
             <KpiCard
@@ -251,7 +262,15 @@ export default function ResumenPage() {
           </div>
 
           {/* --- Fila 4 · Unit economics --- */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {/* ARPC abre la fila: es el ingreso por cliente del que sale el LTV.
+                DB_KPI no trae columna de objetivo para ARPC, así que va sin
+                alerta ni hint (mismo criterio que en Retención). */}
+            <KpiCard
+              label="ARPC"
+              value={formatCurrency(arpc)}
+              mom={getMoMAtMonth(kpi, "ARPC", activeMonth)}
+            />
             <KpiCard
               label="LTV"
               value={formatCurrency(ltv)}
