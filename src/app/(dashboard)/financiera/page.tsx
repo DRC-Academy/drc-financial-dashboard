@@ -26,6 +26,8 @@ import {
   getMoM,
   getMoMAtMonth,
   getMoMAbsAtMonth,
+  getAverageAtMonth,
+  getDeltaAtMonth,
   getSemaforo,
   getSeries,
   getValueAtMonth,
@@ -34,6 +36,7 @@ import {
   formatCurrency,
   formatNumber,
   formatPercent,
+  formatPointsDelta,
 } from "@/lib/kpiHelpers";
 import type { DBKpiData, MetricValue } from "@/types/kpi";
 import type { GastosData } from "@/lib/gastos";
@@ -91,7 +94,6 @@ export default function FinancieraPage() {
   const ltv = getLatest(kpi, "LTV");
   const cac = getLatest(kpi, "CAC");
   const ltvCac = getLtvCacLatest(kpi);
-  const nmEbitda = getLatest(kpi, "NM_ebitda");
   const ingresosAcumulados = getLatest(kpi, "ingresos_acumulados");
   const clientesAcumulados = getLatest(kpi, "clientes_acumulados");
 
@@ -158,6 +160,38 @@ export default function FinancieraPage() {
     cashBalance !== null && burnRate !== null && burnRate !== 0
       ? cashBalance / burnRate
       : null;
+
+  /**
+   * MÁRGENES EN % — columnas "%margenbruto" y "%ebitda" de DB_KPI (nombres
+   * exactos, sin guion bajo tras el %, verificados contra la cabecera). Vienen
+   * en FRACCIÓN 0-1 igual que el resto de tasas del Sheet.
+   *
+   * No existe ninguna columna "NM_ebitda": el margen EBITDA en % es %ebitda y
+   * punto. Y cuadra con la cascada — jun-26: CF_EBITDA −1.705 € sobre
+   * CF_ingresos 25.234 € = −6,8% = %ebitda. Lo mismo el bruto: 14.851 / 25.234
+   * = 58,9% = %margenbruto.
+   *
+   * La comparativa va en PUNTOS porcentuales (momDelta), no en % relativo: el
+   * EBITDA cruza el cero (de +9,5% en may-26 a −6,8% en jun-26) y ahí el %
+   * relativo deja de significar nada.
+   */
+  const MESES_PROMEDIO = 5;
+  const margenBruto = getValueAtMonth(kpiAll, "%margenbruto", cfMonth);
+  const margenBrutoDelta = getDeltaAtMonth(kpiAll, "%margenbruto", cfMonth);
+  const margenBrutoAvg = getAverageAtMonth(
+    kpiAll,
+    "%margenbruto",
+    cfMonth,
+    MESES_PROMEDIO
+  );
+  const ebitdaPct = getValueAtMonth(kpiAll, "%ebitda", cfMonth);
+  const ebitdaPctDelta = getDeltaAtMonth(kpiAll, "%ebitda", cfMonth);
+  const ebitdaPctAvg = getAverageAtMonth(
+    kpiAll,
+    "%ebitda",
+    cfMonth,
+    MESES_PROMEDIO
+  );
 
   const cfOpex = abs(getValueAtMonth(kpiAll, "CF_OPEX", cfMonth));
   const cfCogs = abs(getValueAtMonth(kpiAll, "CF_cogs", cfMonth));
@@ -255,11 +289,12 @@ export default function FinancieraPage() {
               value={ltvCac !== null ? `${formatNumber(ltvCac)}x` : "—"}
               mom={getLtvCacMoM(kpi)}
             />
-            <KpiCard
-              label="Margen neto (EBITDA)"
-              value={nmEbitda !== null ? `${formatNumber(nmEbitda)}%` : "—"}
-              mom={getMoM(kpi, "NM_ebitda")}
-            />
+            {/* La tarjeta "Margen neto (EBITDA)" que vivía acá leía NM_ebitda,
+                que NO es una columna de DB_KPI (113 cabeceras revisadas): estaba
+                en "—" desde siempre. El margen EBITDA en % es %ebitda, y ahora
+                tiene su propia tarjeta —con media móvil y todo— en el bloque de
+                cashflow, junto al margen bruto y al resto del cuadro de
+                resultados del que sale. */}
             <KpiCard label="Ingresos acumulados" value={formatCurrency(ingresosAcumulados)} />
             <KpiCard label="Clientes acumulados" value={formatNumber(clientesAcumulados)} />
           </div>
@@ -346,6 +381,38 @@ export default function FinancieraPage() {
                   label="Runway"
                   value={runway !== null ? `${formatNumber(runway)} meses` : "—"}
                   hint="Derivado: cash balance ÷ burn rate. Sin quema, no hay runway."
+                />
+              </div>
+
+              {/* --- Los dos márgenes en %, con su media móvil --- */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <KpiCard
+                  label="Margen bruto"
+                  value={formatPercent(margenBruto)}
+                  momDelta={
+                    margenBrutoDelta === null ? null : margenBrutoDelta * 100
+                  }
+                  formatDelta={formatPointsDelta}
+                  subValues={[
+                    {
+                      label: `Promedio ${MESES_PROMEDIO}M`,
+                      value: formatPercent(margenBrutoAvg),
+                    },
+                  ]}
+                  hint="Lo que queda de cada euro facturado después del coste directo (COGS)."
+                />
+                <KpiCard
+                  label="EBITDA"
+                  value={formatPercent(ebitdaPct)}
+                  momDelta={ebitdaPctDelta === null ? null : ebitdaPctDelta * 100}
+                  formatDelta={formatPointsDelta}
+                  subValues={[
+                    {
+                      label: `Promedio ${MESES_PROMEDIO}M`,
+                      value: formatPercent(ebitdaPctAvg),
+                    },
+                  ]}
+                  hint="Lo que queda de cada euro facturado después del COGS y del OPEX."
                 />
               </div>
 

@@ -106,6 +106,32 @@ export function getDeltaAtMonth(
   return null;
 }
 
+/**
+ * Promedio de los últimos `n` meses CON DATO hasta el mes indicado (incluido).
+ * Salta los huecos en vez de cortarse en ellos: un mes sin valor no debería
+ * dejar la media a medias. Devuelve null si no hay ningún mes con dato.
+ *
+ * Ojo con las columnas de cashflow: los meses en los que todavía no se cargó el
+ * cuadro de resultados vienen como 0, no como vacío, así que sí entran en la
+ * media. Es lo que dice el Sheet y no lo maquillamos acá.
+ */
+export function getAverageAtMonth(
+  kpi: DBKpiData,
+  key: string,
+  month: string,
+  n: number
+): number | null {
+  const idx = kpi.months.indexOf(month);
+  if (idx < 0 || n <= 0) return null;
+  const valores: number[] = [];
+  for (let i = idx; i >= 0 && valores.length < n; i--) {
+    const v = kpi.data[kpi.months[i]]?.[key];
+    if (v !== null && v !== undefined) valores.push(v);
+  }
+  if (valores.length === 0) return null;
+  return valores.reduce((s, v) => s + v, 0) / valores.length;
+}
+
 export type SemaforoColor = "green" | "yellow" | "red" | "blue" | "neutral";
 
 /**
@@ -295,6 +321,23 @@ export function formatCurrencyDelta(
     signDisplay: "exceptZero",
     ...GROUPING,
   }).format(value);
+}
+
+/**
+ * Delta en PUNTOS porcentuales con signo: 5.34 → "+5,3 pp".
+ *
+ * Es la comparativa correcta para los MÁRGENES, donde el % relativo no sirve:
+ * un EBITDA que pasa de +9,5% a -6,8% "cae un 171%", que no significa nada, y
+ * en cuanto la métrica cruza el cero el signo del % relativo se da vuelta. La
+ * distancia en puntos, en cambio, siempre se lee igual.
+ */
+export function formatPointsDelta(value: MetricValue): string {
+  if (value === null) return "—";
+  return `${new Intl.NumberFormat("es-ES", {
+    maximumFractionDigits: 1,
+    signDisplay: "exceptZero",
+    ...GROUPING,
+  }).format(value)} pp`;
 }
 
 /** Delta absoluto numérico con signo explícito: 8 → "+8", -8 → "-8". */
