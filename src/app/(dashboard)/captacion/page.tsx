@@ -135,6 +135,7 @@ export default function CaptacionPage() {
 
   const mixRows = applyRange(months, mixRange).map((month) => ({
     month,
+    LTV: kpi.data[month]?.["LTV"] ?? null,
     AOV_nuevos: kpi.data[month]?.["AOV_nuevos"] ?? null,
     CAC: kpi.data[month]?.["CAC"] ?? null,
     CPL_ads: kpi.data[month]?.["CPL_ads"] ?? null,
@@ -365,17 +366,28 @@ export default function CaptacionPage() {
             />
           </Panel>
 
-          {/* --- Gráfico · AOV nuevos, CAC y CPL --- */}
+          {/* --- Gráfico · LTV, AOV nuevos, CAC y CPL --- */}
+          {/*
+            EJE ÚNICO, a propósito. El LTV es la serie más grande de las cuatro,
+            pero no por un orden de magnitud: sobre el histórico completo va de
+            250 € a 367 €, contra 100-255 € de AOV_nuevos y 4-200 € de CAC (sólo
+            el CPL, 5-26 €, queda abajo, y ya quedaba antes). Separarlo en un eje
+            propio rompería justo lo que hace útil ponerlo acá: la distancia
+            vertical entre LTV y CAC ES la lectura del panel — con ejes distintos
+            esa distancia deja de significar euros y se puede dibujar un LTV por
+            debajo del CAC con el negocio sano, o al revés.
+          */}
           <Panel
-            title="Ticket medio nuevo, CAC y CPL"
-            description="Las tres series están en € (mismo eje): AOV de clientes nuevos, coste de adquisición y coste por lead, para leer de un vistazo el margen entre lo que cuesta captar y lo que deja cada nuevo cliente."
+            title="LTV, ticket medio nuevo, CAC y CPL"
+            description="Las cuatro series están en € sobre el MISMO eje: valor de vida del cliente, AOV de clientes nuevos, coste de adquisición y coste por lead. Así la distancia entre LTV y CAC se lee directamente en euros — es el margen que deja cada cliente captado."
             action={<RangeFilter value={mixRange} onChange={setMixRange} />}
           >
             <MultiTrendChart
               data={mixRows}
               series={[
-                /* AOV nuevos es dinero que ENTRA por pedido → azul. CAC y CPL
-                   son categorías (no gasto bruto): verde y oro. */
+                /* LTV y AOV nuevos son dinero que ENTRA → rampa de ingreso. CAC y
+                   CPL son categorías (no gasto bruto): verde y oro. */
+                { key: "LTV", label: "LTV", color: INGRESO.fuerte },
                 { key: "AOV_nuevos", label: "AOV nuevos", color: INGRESO.base },
                 { key: "CAC", label: "CAC", color: CAT.verde },
                 { key: "CPL_ads", label: "CPL ads", color: CAT.oro },
