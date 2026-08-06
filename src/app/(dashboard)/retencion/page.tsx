@@ -453,7 +453,9 @@ export default function RetencionPage() {
             <CohortHeatmap
               data={cohortView.data}
               variant="diff"
-              valueSuffix={pctView ? "%" : ""}
+              /* El "%" ya lo pone valueFormatter: si además se pasara como
+                 sufijo, el tooltip diría "-52,8%%". */
+              valueSuffix=""
               valueFormatter={
                 pctView
                   ? (v) => `${v > 0 ? "+" : ""}${formatPercentPoints(v)}`
