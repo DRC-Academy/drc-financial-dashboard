@@ -19,21 +19,53 @@ import {
   getAlertaOperativa,
   getAlertaObjetivo,
   getRoiCanalLatest,
+  CPL_LIMITE,
+  CAC_LIMITE,
   CR_OBJETIVO,
+  CR_LIMITE,
   formatCurrency,
   formatCurrencyDelta,
   formatNumber,
   formatNumberDelta,
   formatPercent,
 } from "@/lib/kpiHelpers";
+import {
+  getBlock,
+  rankAtMonth,
+  EMPTY_PRODUCTO_KPI,
+  type ProductoKpiData,
+} from "@/lib/productoKpiHelpers";
 import { CAT, GASTO, INGRESO, NEUTRO } from "@/lib/chartColors";
 import type { DBKpiData } from "@/types/kpi";
+
+/**
+ * Pie de las tarjetas con umbral fijo: objetivo arriba, límite debajo. El
+ * objetivo puede venir del Sheet (CPL_obj/CAC_obj/CR_obj); el límite es siempre
+ * una constante de negocio (ver CPL_LIMITE y compañía en kpiHelpers).
+ */
+function ObjetivoLimite({
+  objetivo,
+  limite,
+}: {
+  objetivo: string | null;
+  limite: string;
+}) {
+  return (
+    <>
+      {objetivo && <div>Objetivo: {objetivo}</div>}
+      <div>Límite: {limite}</div>
+    </>
+  );
+}
 
 export default function ResumenPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
     "/api/kpi",
     60_000
   );
+  // Sólo para el bloque "Oportunidad del mes": el producto más vendido sale de
+  // la hoja "KPI Producto" (misma fuente que la página Producto), no de DB_KPI.
+  const producto = useLiveData<ProductoKpiData>("/api/producto-kpi", 60_000);
 
   const kpi = data ?? { months: [], keys: [], data: {} };
   const months = kpi.months;
@@ -130,6 +162,20 @@ export default function ResumenPage() {
   } else if (roiMeta !== null) {
     mejorCanal = "Meta Ads";
   }
+
+  // Producto más vendido = el nº 1 por INGRESOS del bloque "Ingresos" de la hoja
+  // "KPI Producto" — el mismo criterio que la tarjeta "Más vendido (ingresos)"
+  // de la página Producto, para que las dos no puedan discrepar. "KPI Producto"
+  // tiene su propia lista de meses: si el mes elegido arriba no está en ella,
+  // caemos a su mes más reciente (y no dejamos la ficha vacía por un desfase de
+  // calendario entre hojas).
+  const productoKpi = producto.data ?? EMPTY_PRODUCTO_KPI;
+  const productoMonth = productoKpi.months.includes(activeMonth)
+    ? activeMonth
+    : productoKpi.months[productoKpi.months.length - 1] ?? "";
+  const topProducto =
+    rankAtMonth(getBlock(productoKpi, "Ingresos"), productoKpi.months, productoMonth)[0] ??
+    null;
 
   return (
     <>
@@ -284,7 +330,12 @@ export default function ResumenPage() {
               mom={getMoMAtMonth(kpi, "CPL_ads", activeMonth)}
               momIsGoodWhenPositive={false}
               alerta={getAlertaOperativa("CPL_ads", cpl)}
-              hint={cplObj !== null ? `Objetivo: ${formatCurrency(cplObj)}` : undefined}
+              hint={
+                <ObjetivoLimite
+                  objetivo={cplObj !== null ? formatCurrency(cplObj) : null}
+                  limite={formatCurrency(CPL_LIMITE)}
+                />
+              }
             />
             <KpiCard
               label="CAC"
@@ -292,7 +343,12 @@ export default function ResumenPage() {
               mom={getMoMAtMonth(kpi, "CAC", activeMonth)}
               momIsGoodWhenPositive={false}
               alerta={getAlertaOperativa("CAC", cac)}
-              hint={cacObj !== null ? `Objetivo: ${formatCurrency(cacObj)}` : undefined}
+              hint={
+                <ObjetivoLimite
+                  objetivo={cacObj !== null ? formatCurrency(cacObj) : null}
+                  limite={formatCurrency(CAC_LIMITE)}
+                />
+              }
             />
             {/* CR_clientes se compara en fracción (0-1) y se muestra en %. */}
             <KpiCard
@@ -300,7 +356,12 @@ export default function ResumenPage() {
               value={formatPercent(cr)}
               mom={getMoMAtMonth(kpi, "CR_clientes", activeMonth)}
               alerta={getAlertaOperativa("CR_clientes", cr)}
-              hint={`Objetivo: ${formatPercent(crObj)}`}
+              hint={
+                <ObjetivoLimite
+                  objetivo={formatPercent(crObj)}
+                  limite={formatPercent(CR_LIMITE)}
+                />
+              }
             />
           </div>
 
@@ -357,36 +418,29 @@ export default function ResumenPage() {
             />
           </Panel>
 
+          {/* Dos datos y nada más: dónde invertir y qué se está vendiendo. Los
+              ROI por canal que antes vivían acá están completos en Captación. */}
           <Panel
             title="Oportunidad del mes"
-            description="Mejor canal de adquisición según ROI del último mes disponible."
+            description="Mejor canal de adquisición según ROI del último mes disponible, y el producto que más ingresos deja."
           >
-            {mejorCanal ? (
-              <div className="flex flex-wrap items-center gap-6">
-                <div>
-                  <div className="text-xs text-drc-ink-soft">Canal recomendado</div>
-                  <div className="text-lg font-semibold text-drc-green">
-                    {mejorCanal}
-                  </div>
-                </div>
-                <div className="flex gap-8">
-                  <div>
-                    <div className="text-xs text-drc-ink-soft">ROI Google</div>
-                    <div className="tabular text-sm font-medium">
-                      {roiGoogle !== null ? formatPercent(roiGoogle) : "—"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-drc-ink-soft">ROI Meta</div>
-                    <div className="tabular text-sm font-medium">
-                      {roiMeta !== null ? formatPercent(roiMeta) : "—"}
-                    </div>
-                  </div>
+            <div className="flex flex-wrap gap-x-12 gap-y-4">
+              <div>
+                <div className="text-xs text-drc-ink-soft">Canal recomendado</div>
+                <div className="text-lg font-semibold text-drc-green">
+                  {mejorCanal ?? "Sin datos"}
                 </div>
               </div>
-            ) : (
-              <EmptyState label="Faltan ROI_google / ROI_meta en el Sheet" />
-            )}
+              <div>
+                <div className="text-xs text-drc-ink-soft">
+                  Producto más vendido
+                  {topProducto && productoMonth ? ` · ${productoMonth}` : ""}
+                </div>
+                <div className="text-lg font-semibold text-drc-green">
+                  {topProducto?.label ?? "Sin datos"}
+                </div>
+              </div>
+            </div>
           </Panel>
         </div>
       )}

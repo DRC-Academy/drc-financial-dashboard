@@ -97,7 +97,9 @@ export function KpiCard({
   /** Dónde se apilan los n2: debajo del n1 o a su derecha. */
   subValuesPosition?: "below" | "right";
   semaforo?: SemaforoColor;
-  hint?: string;
+  /** Pie de la tarjeta. Acepta nodos para los casos de varias líneas (p. ej.
+   *  "Objetivo: X" + "Límite: Y" en CPL/CAC/CR), no sólo texto suelto. */
+  hint?: ReactNode;
   /** Control propio de la tarjeta, alineado a la derecha del título (mismo
    *  sitio que el chip de alerta). Para tarjetas con su propio filtro, como el
    *  RangeFilter de ingresos acumulados. */

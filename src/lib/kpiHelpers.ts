@@ -148,13 +148,25 @@ export function alertaToSemaforo(color: AlertaColor): SemaforoColor {
 export type AlertaKey = "CPL_ads" | "CAC" | "CR_clientes";
 
 /**
- * Umbral a partir del cual CR_clientes cuenta como "EN OBJETIVO", en FRACCIÓN
- * (0-1) igual que el valor del Sheet. Vive acá — y no suelto dentro de
- * getAlertaOperativa — porque la tarjeta de CR lo reutiliza como hint de
- * objetivo cuando el Sheet no trae la columna CR_obj. Un único número: si
- * cambia el criterio, cambian a la vez el chip de alerta y el hint.
+ * OBJETIVO y LÍMITE de las métricas con umbrales fijos. Son constantes de
+ * negocio, NO columnas del Sheet: DB_KPI trae CPL_obj/CAC_obj/CR_obj (con los
+ * mismos valores de objetivo), pero ninguna columna de límite.
+ *
+ * Viven acá — y no sueltos dentro de getAlertaOperativa — porque las tarjetas
+ * de CPL/CAC/CR los reutilizan como hints ("Objetivo: X" / "Límite: Y"). Un
+ * único número por umbral: si cambia el criterio, cambian a la vez el chip de
+ * alerta y el hint.
+ *
+ * CPL y CAC van en € (cuanto más bajo, mejor → el límite está POR ENCIMA del
+ * objetivo). CR va en FRACCIÓN 0-1 igual que el Sheet y es al revés: cuanto más
+ * alto mejor, así que su límite está POR DEBAJO del objetivo.
  */
+export const CPL_OBJETIVO = 12;
+export const CPL_LIMITE = 20;
+export const CAC_OBJETIVO = 65;
+export const CAC_LIMITE = 120;
 export const CR_OBJETIVO = 0.28;
+export const CR_LIMITE = 0.2;
 
 /**
  * Alerta operativa por umbrales fijos (se pinta en el nivel n3 de la tarjeta).
@@ -175,17 +187,17 @@ export function getAlertaOperativa(
 
   switch (key) {
     case "CPL_ads":
-      if (value < 12) return { texto: "EN OBJETIVO", color: "blue" };
+      if (value < CPL_OBJETIVO) return { texto: "EN OBJETIVO", color: "blue" };
       if (value < 15) return { texto: "BIEN", color: "green" };
-      if (value < 20) return { texto: "MEJORABLE", color: "yellow" };
+      if (value < CPL_LIMITE) return { texto: "MEJORABLE", color: "yellow" };
       return { texto: "PELIGRO", color: "red" };
     case "CAC":
-      if (value < 65) return { texto: "EN OBJETIVO", color: "blue" };
+      if (value < CAC_OBJETIVO) return { texto: "EN OBJETIVO", color: "blue" };
       if (value < 80) return { texto: "BIEN", color: "green" };
-      if (value < 120) return { texto: "MEJORABLE", color: "yellow" };
+      if (value < CAC_LIMITE) return { texto: "MEJORABLE", color: "yellow" };
       return { texto: "PELIGRO", color: "red" };
     case "CR_clientes":
-      if (value < 0.2) return { texto: "PELIGRO", color: "red" };
+      if (value < CR_LIMITE) return { texto: "PELIGRO", color: "red" };
       if (value < 0.25) return { texto: "MEJORABLE", color: "yellow" };
       if (value < CR_OBJETIVO) return { texto: "BIEN", color: "green" };
       return { texto: "EN OBJETIVO", color: "blue" };
