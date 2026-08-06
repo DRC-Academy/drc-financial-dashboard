@@ -12,6 +12,7 @@ import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { StackedBarChart } from "@/components/ui/StackedBarChart";
 import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
 import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
+import { MonthRangeSelect } from "@/components/ui/MonthRangeSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   getValueAtMonth,
@@ -37,15 +38,28 @@ const C = {
   canalGoogle: INGRESO.fuerte,
   canalMeta: INGRESO.medio,
   canalOtros: INGRESO.suave,
-  /* No es un canal: es el ingreso que ninguna captación explica (recurrente).
-     Va en el gris acromático justamente para no leerse como un cuarto canal. */
-  canalNoAtribuido: NEUTRO.gris,
 };
 
 /** Resta a - b tratando null como 0, salvo que AMBOS sean null → null. */
 function subOrNull(a: MetricValue, b: MetricValue): MetricValue {
   if (a === null && b === null) return null;
   return (a ?? 0) - (b ?? 0);
+}
+
+/**
+ * Mes de arranque por defecto del rango de acumulados: enero del año del ÚLTIMO
+ * mes disponible ("lo que va del año"). Si ese enero no está en la serie, el
+ * primer mes que sí esté de ese año; y si el dataset no llega a cubrir el año,
+ * el primer mes de todos. El año sale del dato y no del reloj a propósito: si
+ * el Sheet se queda atrás, el rango sigue mostrando un período con datos en vez
+ * de uno vacío.
+ */
+function inicioDelAnio(months: string[]): string {
+  const ultimo = months[months.length - 1] ?? "";
+  if (!ultimo) return "";
+  const anio = ultimo.slice(-2);
+  const delAnio = months.filter((m) => m.endsWith(`-${anio}`));
+  return delAnio.find((m) => m.startsWith("ene-")) ?? delAnio[0] ?? months[0];
 }
 
 export default function IngresosPage() {
@@ -70,9 +84,12 @@ export default function IngresosPage() {
   const [canalRange, setCanalRange] = useState(0);
   const [pedRange, setPedRange] = useState(0);
   const [aovRange, setAovRange] = useState(0);
-  // La tarjeta de ingresos acumulados tiene su propio rango, independiente del
-  // de los gráficos.
-  const [acumRange, setAcumRange] = useState(0);
+  // La tarjeta de ingresos acumulados tiene su propio rango a medida (mes de
+  // inicio y mes de fin), independiente del de los gráficos y del desplegable
+  // de mes de las tarjetas. "" = todavía sin elegir → se usa el rango por
+  // defecto ("lo que va del año").
+  const [acumFromChoice, setAcumFromChoice] = useState<string>("");
+  const [acumToChoice, setAcumToChoice] = useState<string>("");
 
   // ---- Fila 1 · Ingresos netos + MRR ----
   const ingresosNetos = getValueAtMonth(kpi, "ingresos_netos", activeMonth);
@@ -97,6 +114,15 @@ export default function IngresosPage() {
   // Sheet: ingresos_B2C_brutos × %_stripe_fee = |stripe_fee| al céntimo), no
   // sobre ingresos_netos.
   const stripeFeePct = getValueAtMonth(kpi, "%_stripe_fee", activeMonth);
+  // fee_gestion / %_fee_gestion existen como columnas propias en DB_KPI (nombre
+  // exacto verificado contra la cabecera), y son OTRA cosa que stripe_fee: el
+  // Sheet las guarda en POSITIVO, no en negativo. El % está calculado sobre la
+  // misma base que el de Stripe — ingresos_B2C_brutos × %_fee_gestion =
+  // fee_gestion al céntimo (jul-26: 19.792,74 × 0,018027 = 356,80) — y por eso
+  // las dos tarjetas pueden ir juntas con la misma etiqueta de sub-valor.
+  const feeGestion = getValueAtMonth(kpi, "fee_gestion", activeMonth);
+  const feeGestionAbs = feeGestion === null ? null : Math.abs(feeGestion);
+  const feeGestionPct = getValueAtMonth(kpi, "%_fee_gestion", activeMonth);
   const importeRefundsRaw = getValueAtMonth(kpi, "importe_refunds", activeMonth);
   const importeRefunds =
     importeRefundsRaw === null ? null : Math.abs(importeRefundsRaw);
@@ -107,25 +133,44 @@ export default function IngresosPage() {
   const aov = getValueAtMonth(kpi, "AOV", activeMonth);
   const aovNuevos = getValueAtMonth(kpi, "AOV_nuevos", activeMonth);
 
-  // ---- Ingresos acumulados con rango propio ----
-  // El período va de los últimos N meses HASTA el mes elegido en el desplegable
-  // (no hasta el último mes disponible). El n1 es el acumulado a CIERRE de ese
-  // período; el n2, cuánto se sumó DENTRO del período (cierre − mes previo al
-  // arranque), que es lo que de verdad cambia al mover el filtro.
-  const acumMonthsUpTo = months.slice(0, months.indexOf(activeMonth) + 1);
-  const acumWindow = applyRange(acumMonthsUpTo, acumRange);
-  const acumFin = acumWindow[acumWindow.length - 1] ?? "";
-  const acumInicio = acumWindow[0] ?? "";
+  // ---- Ingresos acumulados con rango de fechas a medida ----
+  // Los dos extremos son libres (no una ventana móvil contra el final de la
+  // serie). Por defecto, lo que va del año: de enero del año del último mes con
+  // dato hasta ese último mes.
+  const acumInicio = months.includes(acumFromChoice)
+    ? acumFromChoice
+    : inicioDelAnio(months);
+  const acumFin = months.includes(acumToChoice)
+    ? acumToChoice
+    : months[months.length - 1] ?? "";
+
+  // ingresos_acumulados es un ACUMULADO CORRIDO desde el origen (verificado
+  // contra el Sheet: es estrictamente creciente y cada salto mensual coincide al
+  // céntimo con ingresos_B2C_netos de ese mes — ojo, con el B2C neto, NO con
+  // ingresos_netos, que además incluye B2B y Oritalk). Siendo corrido, lo
+  // acumulado DENTRO del rango es la resta de los dos extremos:
+  //   acumulado(fin) − acumulado(mes anterior al inicio).
   const ingresosAcumulados = getValueAtMonth(kpi, "ingresos_acumulados", acumFin);
-  // Base = acumulado del mes ANTERIOR al primero de la ventana. Si la ventana
-  // arranca en el primer mes del dataset no hay base previa → el acumulado del
-  // período es el acumulado entero.
   const acumBaseMonth = months[months.indexOf(acumInicio) - 1] ?? "";
   const acumBase = acumBaseMonth
     ? getValueAtMonth(kpi, "ingresos_acumulados", acumBaseMonth)
     : 0;
   const acumEnPeriodo =
     ingresosAcumulados === null ? null : ingresosAcumulados - (acumBase ?? 0);
+
+  // Suma de ingresos_netos del mismo rango. NO tiene por qué coincidir con el
+  // acumulado de arriba y no es un error: el acumulado del Sheet sólo suma el
+  // B2C neto, así que la diferencia entre ambas cifras es exactamente el B2B y
+  // el Oritalk del período.
+  const rangoMonths = months.slice(
+    months.indexOf(acumInicio),
+    months.indexOf(acumFin) + 1
+  );
+  const netosEnPeriodo = rangoMonths.reduce<MetricValue>((acc, m) => {
+    const v = kpi.data[m]?.["ingresos_netos"] ?? null;
+    if (v === null) return acc;
+    return (acc ?? 0) + v;
+  }, null);
 
   // ---- Gráfico · mix de ingresos por línea de negocio (apilado) ----
   const mixRows = applyRange(months, mixRange).map((month) => ({
@@ -136,27 +181,21 @@ export default function IngresosPage() {
   }));
 
   // ---- Gráfico · ingresos por canal (apilado) ----
-  // "ingresos_otros" SÍ es una columna de DB_KPI: es un canal de captación real
-  // (lo que entró sin venir de Google ni de Meta), no el resto de la resta. Antes
-  // se derivaba como ingresos_netos - google - meta, y eso lo inflaba con todo el
-  // ingreso RECURRENTE: en jul-26 daba 15.023 € "de otros canales" cuando el
-  // canal Otros fueron 1.746 € (los tres canales suman 6.166 € sobre 19.444 € de
-  // ingresos netos). Ese resto es su propio segmento, y no es un canal.
-  const canalRows = applyRange(months, canalRange).map((month) => {
-    const netos = kpi.data[month]?.["ingresos_netos"] ?? null;
-    const g = kpi.data[month]?.["ingresos_google"] ?? null;
-    const m = kpi.data[month]?.["ingresos_meta"] ?? null;
-    const otros = kpi.data[month]?.["ingresos_otros"] ?? null;
-    const noAtribuido =
-      netos === null ? null : netos - (g ?? 0) - (m ?? 0) - (otros ?? 0);
-    return {
-      month,
-      ingresos_google: g,
-      ingresos_meta: m,
-      ingresos_otros: otros,
-      ingresos_no_atribuido: noAtribuido,
-    };
-  });
+  // Los tres son columnas reales de DB_KPI: "ingresos_otros" es un canal de
+  // captación de verdad (lo que entró sin venir de Google ni de Meta), no el
+  // resto de una resta.
+  //
+  // El gráfico llegaba hasta los ingresos netos del mes con un cuarto tramo gris
+  // ("No atribuido a captación") que era ese resto: ingresos_netos menos los
+  // tres canales, o sea sobre todo ingreso RECURRENTE. No es un canal, no cabe
+  // en un gráfico titulado "por canal" y se sacó: ahora la barra suma lo
+  // captado, no los ingresos del mes.
+  const canalRows = applyRange(months, canalRange).map((month) => ({
+    month,
+    ingresos_google: kpi.data[month]?.["ingresos_google"] ?? null,
+    ingresos_meta: kpi.data[month]?.["ingresos_meta"] ?? null,
+    ingresos_otros: kpi.data[month]?.["ingresos_otros"] ?? null,
+  }));
 
   // ---- Gráfico · pedidos nuevos vs recurrentes (apilado) + recurrent_rate ----
   const pedidosRows = applyRange(months, pedRange).map((month) => ({
@@ -240,8 +279,8 @@ export default function IngresosPage() {
             </Panel>
           </div>
 
-          {/* --- Fila · Stripe + refunds (2 tarjetas n2) --- */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* --- Fila · Stripe + fee de gestión + refunds (3 tarjetas n2) --- */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <KpiCard
               label="Fee de Stripe"
               value={formatCurrency(stripeFeeAbs)}
@@ -249,6 +288,15 @@ export default function IngresosPage() {
               momIsGoodWhenPositive={false}
               subValues={[
                 { label: "% s/ B2C brutos", value: formatPercent(stripeFeePct) },
+              ]}
+            />
+            <KpiCard
+              label="Fee de gestión"
+              value={formatCurrency(feeGestionAbs)}
+              mom={getMoMAbsAtMonth(kpi, "fee_gestion", activeMonth)}
+              momIsGoodWhenPositive={false}
+              subValues={[
+                { label: "% s/ B2C brutos", value: formatPercent(feeGestionPct) },
               ]}
             />
             <KpiCard
@@ -286,23 +334,46 @@ export default function IngresosPage() {
             </div>
           </div>
 
-          {/* --- Fila · Ingresos acumulados, con su propio rango --- */}
+          {/* --- Fila · Ingresos acumulados, con su rango de fechas a medida --- */}
           <KpiCard
             label="Ingresos acumulados"
-            value={formatCurrency(ingresosAcumulados)}
-            action={<RangeFilter value={acumRange} onChange={setAcumRange} />}
+            value={formatCurrency(acumEnPeriodo)}
+            action={
+              <MonthRangeSelect
+                months={months}
+                from={acumInicio}
+                to={acumFin}
+                onChange={(f, t) => {
+                  setAcumFromChoice(f);
+                  setAcumToChoice(t);
+                }}
+              />
+            }
             subValues={[
               {
-                label: "Acumulado en el período",
-                value: formatCurrency(acumEnPeriodo),
+                label: "Suma de ingresos netos",
+                value: formatCurrency(netosEnPeriodo),
+              },
+              {
+                label: `Acumulado total a ${acumFin}`,
+                value: formatCurrency(ingresosAcumulados),
               },
             ]}
             hint={
-              acumInicio && acumFin
-                ? acumInicio === acumFin
-                  ? `Cierre de ${acumFin}`
-                  : `Período ${acumInicio} → ${acumFin} (cierre)`
-                : undefined
+              <>
+                <div>
+                  {acumInicio === acumFin
+                    ? `Sólo ${acumFin}`
+                    : `Rango ${acumInicio} → ${acumFin}`}
+                  {acumBaseMonth
+                    ? ` · acumulado(${acumFin}) − acumulado(${acumBaseMonth})`
+                    : " · sin mes previo: incluye lo acumulado antes del Sheet"}
+                </div>
+                <div>
+                  La columna ingresos_acumulados del Sheet suma el B2C neto; la
+                  diferencia con los ingresos netos es el B2B y el Oritalk.
+                </div>
+              </>
             }
           />
 
@@ -323,24 +394,14 @@ export default function IngresosPage() {
           {/* --- Gráfico · ingresos por canal --- */}
           <Panel
             title="Ingresos por canal"
-            description="Barras apiladas hasta los ingresos netos del mes. Los tres primeros tramos son los canales de captación (Google, Meta y Otros, tal como los atribuye el Sheet); el gris es el ingreso que no viene de captación de ese mes — sobre todo recurrente — y por eso no es un canal."
+            description="Barras apiladas con los tres canales de captación tal como los atribuye el Sheet: Google, Meta y Otros. La barra suma lo CAPTADO en el mes, no los ingresos netos: el ingreso que no viene de captación (sobre todo recurrente) no aparece acá."
             action={<RangeFilter value={canalRange} onChange={setCanalRange} />}
           >
             <StackedBarChart
               data={canalRows}
-              keys={[
-                "ingresos_google",
-                "ingresos_meta",
-                "ingresos_otros",
-                "ingresos_no_atribuido",
-              ]}
-              colors={[
-                C.canalGoogle,
-                C.canalMeta,
-                C.canalOtros,
-                C.canalNoAtribuido,
-              ]}
-              labels={["Google", "Meta", "Otros", "No atribuido a captación"]}
+              keys={["ingresos_google", "ingresos_meta", "ingresos_otros"]}
+              colors={[C.canalGoogle, C.canalMeta, C.canalOtros]}
+              labels={["Google", "Meta", "Otros"]}
               valueFormatter={(v) => formatCurrency(v)}
             />
           </Panel>
