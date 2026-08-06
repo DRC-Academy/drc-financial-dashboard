@@ -20,10 +20,12 @@ import {
   getMoMAbsAtMonth,
   getDeltaAtMonth,
   getLtvCacAtMonth,
+  monthLabelToIndex,
   formatCurrency,
   formatNumber,
   formatNumberDelta,
   formatPercent,
+  formatPercentPoints,
 } from "@/lib/kpiHelpers";
 import type { SemaforoColor } from "@/lib/kpiHelpers";
 import { CAT, GASTO, INGRESO, NEUTRO } from "@/lib/chartColors";
@@ -39,6 +41,9 @@ import type {
  * Semáforo del ratio LTV:CAC: sano (≥3x) → verde; a medio camino (≥2x) →
  * amarillo; por debajo de 2x → rojo (cuanto más lejos del objetivo de 3x, peor).
  */
+/** Referencia estable para cuando /api/cohortes todavía no respondió. */
+const EMPTY_COHORT_DATA: CohortData = { cohorts: [], monthsOfLife: [] };
+
 function ltvCacSemaforo(ratio: MetricValue): SemaforoColor {
   if (ratio === null) return "neutral";
   if (ratio >= 3) return "green";
@@ -78,6 +83,8 @@ export default function RetencionPage() {
   // Rango de cohortes del heatmap (por etiqueta de cohorte; "" = extremo).
   const [cohortFrom, setCohortFrom] = useState<string>("");
   const [cohortTo, setCohortTo] = useState<string>("");
+  // false = clientes (absoluto) · true = % sobre el tamaño inicial de la cohorte.
+  const [pctView, setPctView] = useState(false);
 
   // ---- Tarjetas (mes seleccionado) ----
   const suscActivas = getValueAtMonth(kpi, "suscripciones_activas", activeMonth);
@@ -134,32 +141,92 @@ export default function RetencionPage() {
 
   const cuponRows = cupones.data ?? [];
 
-  // ---- Heatmap C8 · rango de cohortes + vista de diferencia ----
-  const cohortList = cohortes.data?.cohorts ?? [];
-  const monthsOfLife = cohortes.data?.monthsOfLife ?? [];
+  // ---- Heatmap C8 · rango de cohortes, vista de diferencia y toggle % ----
+  // El fallback es una constante de módulo, no un {} literal: si no, cada render
+  // sin datos crearía arrays nuevos y el useMemo de abajo no memorizaría nada.
+  const cohortData = cohortes.data ?? EMPTY_COHORT_DATA;
+  const cohortList = cohortData.cohorts;
+  const monthsOfLife = cohortData.monthsOfLife;
 
-  const cohortDiff = useMemo<CohortData>(() => {
-    if (cohortList.length === 0) return { cohorts: [], monthsOfLife };
+  const cohortView = useMemo(() => {
+    const vacio = {
+      data: { cohorts: [], monthsOfLife: [] } as CohortData,
+      totales: [] as MetricValue[],
+      activos: [] as MetricValue[],
+    };
+    if (cohortList.length === 0) return vacio;
+
     let a = cohortFrom ? cohortList.findIndex((c) => c.cohort === cohortFrom) : 0;
     let b = cohortTo ? cohortList.findIndex((c) => c.cohort === cohortTo) : cohortList.length - 1;
     if (a < 0) a = 0;
     if (b < 0) b = cohortList.length - 1;
     if (a > b) [a, b] = [b, a];
 
-    const cohorts = cohortList.slice(a, b + 1).map((c) => ({
-      cohort: c.cohort,
-      // Diferencia respecto al mes de vida anterior (cuántos se ganan/pierden de
-      // un mes de vida al siguiente). m0 es la base → sin "anterior" → null (celda
-      // vacía). Si falta algún extremo, la celda queda sin dato.
-      values: c.values.map((v, i) => {
-        if (i === 0) return null;
-        const prev = c.values[i - 1];
-        if (v === null || prev === null) return null;
-        return v - prev;
-      }),
-    }));
-    return { cohorts, monthsOfLife };
-  }, [cohortList, monthsOfLife, cohortFrom, cohortTo]);
+    // Mes de vida que corresponde a HOY para cada cohorte = distancia en meses
+    // hasta la cohorte más reciente de la tabla (que por construcción es el mes
+    // en curso). Se calcula sobre la lista COMPLETA, no sobre el rango elegido:
+    // recortar el rango no cambia en qué mes de vida está viviendo cada cohorte.
+    //
+    // Va por etiqueta y no por posición de fila porque la tabla dinámica omite
+    // los grupos vacíos: si un mes no captó a nadie, su fila no existe y contar
+    // filas desplazaría todas las cohortes anteriores un mes.
+    const indices = cohortList.map((c) => monthLabelToIndex(c.cohort));
+    const ultimoIdx = Math.max(
+      ...indices.filter((i): i is number => i !== null),
+      -Infinity
+    );
+
+    const seleccion = cohortList.slice(a, b + 1);
+    const totales = seleccion.map((c) => c.values[0] ?? null);
+
+    // Los que siguen activos hoy: el valor de la cohorte EN SU MES DE VIDA
+    // ACTUAL. Celda vacía → 0 activos, no "sin dato": la tabla dinámica no
+    // escribe los grupos de conteo cero, así que un hueco en el mes en curso
+    // significa que no queda nadie. Si la etiqueta no se puede interpretar (no
+    // debería pasar), se cae al último valor con dato, que es lo más cercano.
+    const activos = seleccion.map((c, k) => {
+      const idx = indices[a + k];
+      if (idx === null || !Number.isFinite(ultimoIdx)) {
+        for (let i = c.values.length - 1; i >= 0; i--) {
+          if (c.values[i] !== null) return c.values[i];
+        }
+        return null;
+      }
+      const mesVida = ultimoIdx - idx;
+      if (mesVida < 0 || mesVida >= c.values.length) return null;
+      return c.values[mesVida] ?? 0;
+    });
+
+    // El grid arranca en m1: el m0 ya no es una celda del heatmap sino la
+    // columna "Entraron" de la izquierda, y en vista de diferencia siempre
+    // quedaba vacío por ser la base.
+    const cohorts = seleccion.map((c, k) => {
+      const total = totales[k];
+      const base = total === null || total === 0 ? null : total;
+      return {
+        cohort: c.cohort,
+        values: c.values.slice(1).map((v, i) => {
+          // Diferencia respecto al mes de vida anterior: cuántos se pierden (o
+          // se recuperan) en ESE mes concreto, no acumulado desde el origen.
+          const prev = c.values[i];
+          if (v === null || prev === null) return null;
+          const diff = v - prev;
+          // En % la diferencia se mide siempre contra el TAMAÑO INICIAL de la
+          // cohorte, no contra los que quedaban vivos el mes anterior. Así toda
+          // la fila habla de la misma base y las bajas mensuales más el % que
+          // sigue activo suman el 100% de la cohorte.
+          if (!pctView) return diff;
+          return base === null ? null : (diff / base) * 100;
+        }),
+      };
+    });
+
+    return {
+      data: { cohorts, monthsOfLife: monthsOfLife.slice(1) } as CohortData,
+      totales,
+      activos,
+    };
+  }, [cohortList, monthsOfLife, cohortFrom, cohortTo, pctView]);
 
   return (
     <>
@@ -326,10 +393,33 @@ export default function RetencionPage() {
           {/* --- C8 · Heatmap de cohortes (rango + diferencia mes a mes) --- */}
           <Panel
             title="Cohortes de clientes — pérdida mes a mes"
-            description="Cada celda muestra la DIFERENCIA de clientes respecto al mes de vida anterior (rojo = pérdida, verde = ganancia). La columna m0 queda vacía por ser la base."
+            description={
+              pctView
+                ? 'Cada celda es la baja de ESE mes concreto (no acumulada) medida sobre el tamaño inicial de la cohorte: rojo = se fueron, verde = se recuperaron. Al compartir base toda la fila, las bajas se suman entre sí y con el "% activos hoy" hasta el 100% de la cohorte — salvo en las cohortes cuyos últimos meses el Sheet deja en blanco, donde esa última caída no tiene celda donde pintarse. "Entraron" se deja en clientes: es la base, no un porcentaje de sí misma.'
+                : 'Cada celda muestra la DIFERENCIA de clientes respecto al mes de vida anterior (rojo = pérdida, verde = ganancia). A los lados, en gris: cuántos entraron en la cohorte y cuántos siguen activos hoy — este último leído en el mes de vida que le toca a cada cohorte, contando el hueco de la tabla dinámica como cero.'
+            }
             action={
               cohortList.length > 0 ? (
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <div className="inline-flex rounded-lg border border-drc-line bg-white p-0.5">
+                    {[
+                      { label: "Clientes", pct: false },
+                      { label: "%", pct: true },
+                    ].map((opt) => (
+                      <button
+                        key={opt.label}
+                        onClick={() => setPctView(opt.pct)}
+                        className={
+                          "px-2.5 py-1 text-xs rounded-md tabular transition-colors " +
+                          (pctView === opt.pct
+                            ? "bg-drc-green-deep text-white"
+                            : "text-drc-ink-soft hover:text-drc-ink")
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                   <span className="text-drc-ink-soft">Cohortes:</span>
                   <select
                     value={cohortFrom}
@@ -360,7 +450,34 @@ export default function RetencionPage() {
               ) : undefined
             }
           >
-            <CohortHeatmap data={cohortDiff} variant="diff" />
+            <CohortHeatmap
+              data={cohortView.data}
+              variant="diff"
+              valueSuffix={pctView ? "%" : ""}
+              valueFormatter={
+                pctView
+                  ? (v) => `${v > 0 ? "+" : ""}${formatPercentPoints(v)}`
+                  : undefined
+              }
+              leading={{
+                header: "Entraron",
+                title: "Clientes que entraron en la cohorte (mes de vida 0)",
+                cells: cohortView.totales.map((v) => formatNumber(v)),
+              }}
+              trailing={{
+                header: pctView ? "% activos hoy" : "Activos hoy",
+                title:
+                  "Clientes de la cohorte que siguen activos en el mes en curso",
+                cells: cohortView.activos.map((v, i) => {
+                  if (v === null) return "—";
+                  if (!pctView) return formatNumber(v);
+                  const total = cohortView.totales[i];
+                  return total === null || total === 0
+                    ? "—"
+                    : formatPercentPoints((v / total) * 100);
+                }),
+              }}
+            />
           </Panel>
 
           {/* --- C10 · Motivos de cancelación + cupones --- */}

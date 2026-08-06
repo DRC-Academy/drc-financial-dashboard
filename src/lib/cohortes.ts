@@ -43,11 +43,21 @@ async function readCohortSheet(sheetName: string): Promise<CohortData> {
     if (headerIdx === -1) return { cohorts: [], monthsOfLife: [] };
 
     // 2. Meses de vida = enteros contiguos desde la col. B; cortar en el primer
-    //    valor no entero (#NUM!, "Suma total", etc.).
+    //    valor no entero (#NUM!, "Suma total", etc.) o en la primera celda
+    //    VACÍA.
+    //
+    //    Lo de la celda vacía no es una precaución de más: la cabecera real
+    //    termina en [... 17, 18, "", "Suma total"], y ese "" es el grupo "(en
+    //    blanco)" de la tabla dinámica. Como Number("") es 0 y 0 sí es entero,
+    //    sin este corte entraba como un mes de vida 0 EXTRA al final, con los
+    //    clientes sueltos sin mes_vida dentro. Se colaba en el heatmap y, peor,
+    //    ensuciaba cualquier lectura de "el último valor de la cohorte".
     const headerRow = rows[headerIdx];
     const monthsOfLife: number[] = [];
     for (let i = 1; i < headerRow.length; i++) {
-      const n = Number(headerRow[i]);
+      const raw = headerRow[i];
+      if (raw === null || raw === undefined || String(raw).trim() === "") break;
+      const n = Number(raw);
       if (!Number.isInteger(n)) break;
       monthsOfLife.push(n);
     }

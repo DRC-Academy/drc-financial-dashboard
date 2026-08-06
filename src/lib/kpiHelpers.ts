@@ -339,6 +339,20 @@ export function formatSheetMonth(raw: unknown): string {
   return String(raw);
 }
 
+/**
+ * "ago-25" → índice absoluto de mes (año × 12 + mes), para poder RESTAR meses
+ * entre dos etiquetas sin pasar por Date. La diferencia de dos índices es la
+ * distancia en meses: eso es lo que traduce una cohorte a su mes de vida actual.
+ * Devuelve null si la etiqueta no tiene la forma "mmm-yy".
+ */
+export function monthLabelToIndex(label: string): number | null {
+  const m = /^([a-zé]{3})-(\d{2})$/i.exec(label.trim());
+  if (!m) return null;
+  const mes = MONTHS_ES.indexOf(m[1].toLowerCase());
+  if (mes < 0) return null;
+  return (2000 + Number(m[2])) * 12 + mes;
+}
+
 /** getLatest pero en valor absoluto — para métricas que el Sheet guarda en negativo (pérdidas). */
 export function getLatestAbs(kpi: DBKpiData, key: string): MetricValue {
   const v = getLatest(kpi, key);
