@@ -316,53 +316,14 @@ export default function ProductoPage() {
             />
           </Panel>
 
-          {/* --- Fila 6 · Qué más trae la hoja --- */}
-          <Panel
-            title="Qué más hay en la hoja"
-            description='"KPI Producto" no es una tabla sino varias tablas apiladas. Esto es todo lo que el parser reconoce hoy; lo que todavía no se grafica está acá para decidir qué vale la pena mostrar.'
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-drc-ink-soft border-b border-drc-line">
-                    <th className="py-2 pr-4 font-medium">Bloque</th>
-                    <th className="py-2 pr-4 font-medium">Desglose</th>
-                    <th className="py-2 pr-4 font-medium">Series</th>
-                    <th className="py-2 font-medium">Total del mes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {kpi.blocks.map((b, i) => {
-                    const mi = months.indexOf(activeMonth);
-                    const total = mi >= 0 ? b.totals[mi] : null;
-                    return (
-                      <tr key={`${b.name}-${i}`} className="border-b border-drc-line/60">
-                        <td className="py-2 pr-4 text-drc-ink">
-                          {b.name}
-                          {b.parent && (
-                            <span className="text-drc-ink-soft">
-                              {" "}
-                              · desglosa {b.parent}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-4 text-drc-ink-soft">
-                          {b.dimension === "horas" ? "por horas" : "por producto"}
-                        </td>
-                        <td className="py-2 pr-4 tabular">{b.series.length}</td>
-                        <td className="py-2 tabular text-drc-ink-soft">
-                          {total === null ? "—" : formatNumber(total)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
+          {/* El panel "Qué más hay en la hoja" que iba acá era diagnóstico
+              nuestro —el inventario de bloques que el parser reconoce en "KPI
+              Producto"— y no información de negocio. Fuera del dashboard. */}
 
-          {/* Suscripciones activas y Ventas quedan parseadas y disponibles pero
-              todavía sin visualización propia: se listan arriba para decidirlo. */}
+          {/* Suscripciones activas y Ventas se parsean y quedan disponibles,
+              pero todavía no tienen visualización propia. El aviso se mantiene
+              porque avisa de que la hoja cambió de forma, no de que falte una
+              vista por hacer. */}
           {(bVentas === null || bActivas === null) && (
             <EmptyState label="Faltan bloques esperados en la hoja (Ventas / Suscripciones Activas)" />
           )}
