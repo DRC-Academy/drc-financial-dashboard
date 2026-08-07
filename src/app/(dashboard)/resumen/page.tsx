@@ -15,7 +15,6 @@ import {
   getValueAtMonth,
   getMoMAtMonth,
   getDeltaAtMonth,
-  getSemaforo,
   getAlertaOperativa,
   getAlertaObjetivo,
   getRoiCanalLatest,
@@ -23,6 +22,8 @@ import {
   CAC_LIMITE,
   CR_OBJETIVO,
   CR_LIMITE,
+  CHURN_OBJETIVO,
+  CHURN_LIMITE,
   formatCurrency,
   formatCurrencyDelta,
   formatNumber,
@@ -295,15 +296,29 @@ export default function ResumenPage() {
                 },
               ]}
             />
-            {/* clientes_churn es una TASA (0.76 → "76%"), no un conteo. */}
+            {/* clientes_churn es una TASA (0.76 → "76%"), no un conteo.
+                Umbrales fijos (> 25% peligro · 20-25% mejorable · ≤ 20% bien)
+                en vez del semáforo por ratio contra churn_obj: son los del
+                churn MENSUAL y no aplican al churn a 3 meses de Retención, que
+                mide otra ventana y sigue sin alerta. El objetivo del hint
+                (20%) sale de la columna churn_obj y coincide con el corte. */}
             <KpiCard
               className="lg:col-span-2"
               label="Clientes en churn"
               value={formatPercent(churn)}
               mom={getMoMAtMonth(kpi, "clientes_churn", activeMonth)}
               momIsGoodWhenPositive={false}
-              semaforo={getSemaforo(churn, churnObj, true)}
-              hint={churnObj !== null ? `Objetivo: ${formatPercent(churnObj)}` : undefined}
+              alerta={getAlertaOperativa("clientes_churn", churn)}
+              hint={
+                <ObjetivoLimite
+                  objetivo={
+                    churnObj !== null
+                      ? formatPercent(churnObj)
+                      : formatPercent(CHURN_OBJETIVO)
+                  }
+                  limite={formatPercent(CHURN_LIMITE)}
+                />
+              }
             />
           </div>
 
