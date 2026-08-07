@@ -384,6 +384,10 @@ export default function CaptacionPage() {
           >
             <MultiTrendChart
               data={mixRows}
+              /* La leyenda va en el orden de negocio LTV → AOV nuevos → CAC →
+                 CPL (de lo que deja cada cliente a lo que cuesta traerlo), no en
+                 el alfabético que recharts aplica por defecto. */
+              legendInSeriesOrder
               series={[
                 /* LTV y AOV nuevos son dinero que ENTRA → rampa de ingreso. CAC y
                    CPL son categorías (no gasto bruto): verde y oro. */

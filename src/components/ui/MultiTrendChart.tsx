@@ -28,6 +28,7 @@ export function MultiTrendChart({
   height = 240,
   valueFormatter,
   yAxisWidth = 48,
+  legendInSeriesOrder = false,
 }: {
   data: MultiTrendPoint[];
   series: { key: string; label: string; color: string }[];
@@ -40,6 +41,17 @@ export function MultiTrendChart({
    * gráficos de € grandes.
    */
   yAxisWidth?: number;
+  /**
+   * Ordena la leyenda como está declarado `series` en vez de alfabéticamente.
+   *
+   * recharts 3 trae itemSorter="value" por defecto, que ordena los items de la
+   * leyenda por su etiqueta: "LTV, AOV nuevos, CAC, CPL" se dibuja como "AOV
+   * nuevos, CAC, CPL, LTV" aunque las líneas estén declaradas en otro orden.
+   * Con este flag la leyenda respeta el orden de `series` (y sigue siendo
+   * determinista entre renders, porque el sorter devuelve el índice declarado
+   * en vez de desactivar el ordenamiento).
+   */
+  legendInSeriesOrder?: boolean;
 }) {
   const hasData = data.some((row) =>
     series.some((s) => row[s.key] !== null && row[s.key] !== undefined)
@@ -72,7 +84,14 @@ export function MultiTrendChart({
             border: "1px solid var(--drc-line)",
           }}
         />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Legend
+          wrapperStyle={{ fontSize: 12 }}
+          itemSorter={
+            legendInSeriesOrder
+              ? (item) => series.findIndex((s) => s.key === item.dataKey)
+              : "value"
+          }
+        />
         {series.map((s) => (
           <Line
             key={s.key}
