@@ -20,14 +20,16 @@ import {
   getMoMAbsAtMonth,
   getDeltaAtMonth,
   getLtvCacAtMonth,
+  getAlertaOperativa,
   monthLabelToIndex,
+  LTV_CAC_OBJETIVO,
+  LTV_CAC_SANO,
   formatCurrency,
   formatNumber,
   formatNumberDelta,
   formatPercent,
   formatPercentPoints,
 } from "@/lib/kpiHelpers";
-import type { SemaforoColor } from "@/lib/kpiHelpers";
 import { CAT, GASTO, INGRESO, NEUTRO } from "@/lib/chartColors";
 import type {
   CancelacionRow,
@@ -37,18 +39,21 @@ import type {
   MetricValue,
 } from "@/types/kpi";
 
-/**
- * Semáforo del ratio LTV:CAC: sano (≥3x) → verde; a medio camino (≥2x) →
- * amarillo; por debajo de 2x → rojo (cuanto más lejos del objetivo de 3x, peor).
- */
 /** Referencia estable para cuando /api/cohortes todavía no respondió. */
 const EMPTY_COHORT_DATA: CohortData = { cohorts: [], monthsOfLife: [] };
 
-function ltvCacSemaforo(ratio: MetricValue): SemaforoColor {
-  if (ratio === null) return "neutral";
-  if (ratio >= 3) return "green";
-  if (ratio >= 2) return "yellow";
-  return "red";
+/**
+ * El ratio LTV:CAC con DOS decimales, no con el único de formatNumber: los
+ * cortes de la alerta caen en números redondos (2x, 3x, 4x) y a un decimal un
+ * 2,95 se dibuja como "3x" al lado de un chip MEJORABLE — que es correcto pero
+ * se lee como una contradicción con el "mínimo sano: 3x" del pie.
+ */
+function formatRatio(value: MetricValue): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("es-ES", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 export default function RetencionPage() {
@@ -313,12 +318,21 @@ export default function RetencionPage() {
               mom={getMoMAtMonth(kpi, "clientes_churn_3m", activeMonth)}
               momIsGoodWhenPositive={false}
             />
-            {/* LTV:CAC calculado (LTV/CAC), no la columna cruda que da 0. */}
+            {/* LTV:CAC calculado (LTV/CAC), no la columna cruda que da 0.
+                Alerta por umbrales en vez del semáforo local: < 2x peligro ·
+                2-3x mejorable · 3-4x bien · ≥ 4x en objetivo. Es la única
+                tarjeta de LTV:CAC que queda en el dashboard (la de Situación
+                financiera se sacó al vaciar su fila superior). */}
             <KpiCard
               label="LTV : CAC"
-              value={ltvCac !== null ? `${formatNumber(ltvCac)}x` : "—"}
-              semaforo={ltvCacSemaforo(ltvCac)}
-              hint="Objetivo: ≥ 3x"
+              value={ltvCac !== null ? `${formatRatio(ltvCac)}x` : "—"}
+              alerta={getAlertaOperativa("LTV_CAC", ltvCac)}
+              hint={
+                <>
+                  <div>Objetivo: ≥ {LTV_CAC_OBJETIVO}x</div>
+                  <div>Mínimo sano: {LTV_CAC_SANO}x</div>
+                </>
+              }
             />
           </div>
 
