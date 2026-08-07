@@ -365,6 +365,33 @@ export default function ResumenPage() {
             />
           </div>
 
+          {/* Dos datos y nada más: dónde invertir y qué se está vendiendo. Los
+              ROI por canal que antes vivían acá están completos en Captación.
+              Va pegado a las tarjetas KPI, antes de los gráficos: es la lectura
+              accionable del mes y se quiere ver sin scrollear. */}
+          <Panel
+            title="Oportunidad del mes"
+            description="Mejor canal de adquisición según ROI del último mes disponible, y el producto que más ingresos deja."
+          >
+            <div className="flex flex-wrap gap-x-12 gap-y-4">
+              <div>
+                <div className="text-xs text-drc-ink-soft">Canal recomendado</div>
+                <div className="text-lg font-semibold text-drc-green">
+                  {mejorCanal ?? "Sin datos"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-drc-ink-soft">
+                  Producto más vendido
+                  {topProducto && productoMonth ? ` · ${productoMonth}` : ""}
+                </div>
+                <div className="text-lg font-semibold text-drc-green">
+                  {topProducto?.label ?? "Sin datos"}
+                </div>
+              </div>
+            </div>
+          </Panel>
+
           <Panel
             title="Ingresos netos y MRR en el tiempo"
             description="Evolución conjunta sobre la misma línea temporal."
@@ -418,30 +445,6 @@ export default function ResumenPage() {
             />
           </Panel>
 
-          {/* Dos datos y nada más: dónde invertir y qué se está vendiendo. Los
-              ROI por canal que antes vivían acá están completos en Captación. */}
-          <Panel
-            title="Oportunidad del mes"
-            description="Mejor canal de adquisición según ROI del último mes disponible, y el producto que más ingresos deja."
-          >
-            <div className="flex flex-wrap gap-x-12 gap-y-4">
-              <div>
-                <div className="text-xs text-drc-ink-soft">Canal recomendado</div>
-                <div className="text-lg font-semibold text-drc-green">
-                  {mejorCanal ?? "Sin datos"}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-drc-ink-soft">
-                  Producto más vendido
-                  {topProducto && productoMonth ? ` · ${productoMonth}` : ""}
-                </div>
-                <div className="text-lg font-semibold text-drc-green">
-                  {topProducto?.label ?? "Sin datos"}
-                </div>
-              </div>
-            </div>
-          </Panel>
         </div>
       )}
     </>
