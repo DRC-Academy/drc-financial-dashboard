@@ -171,7 +171,12 @@ export function alertaToSemaforo(color: AlertaColor): SemaforoColor {
 }
 
 /** Métricas con umbrales de alerta definidos. */
-export type AlertaKey = "CPL_ads" | "CAC" | "CR_clientes";
+export type AlertaKey =
+  | "CPL_ads"
+  | "CAC"
+  | "CR_clientes"
+  | "clientes_churn"
+  | "LTV_CAC";
 
 /**
  * OBJETIVO y LÍMITE de las métricas con umbrales fijos. Son constantes de
@@ -193,6 +198,52 @@ export const CAC_OBJETIVO = 65;
 export const CAC_LIMITE = 120;
 export const CR_OBJETIVO = 0.28;
 export const CR_LIMITE = 0.2;
+
+/**
+ * CHURN MENSUAL (clientes_churn) — en FRACCIÓN 0-1, como lo guarda el Sheet.
+ * Es una TASA de pérdida: cuanto más alta, peor.
+ *
+ * El objetivo (20%) no es un número inventado: coincide con la columna
+ * churn_obj de DB_KPI, que vale 0,2 en todos los meses. El límite (25%) sí es
+ * una constante de negocio sin columna en el Sheet.
+ *
+ * Ojo: estos umbrales son SÓLO para clientes_churn (churn mensual). El churn a
+ * 3 meses (clientes_churn_3m, tarjeta "Churn 3M" de Retención) mide otra cosa —
+ * la ventana trimestral, siempre más alta — y se deja sin alerta hasta tener
+ * umbrales propios.
+ */
+export const CHURN_OBJETIVO = 0.2;
+export const CHURN_LIMITE = 0.25;
+
+/**
+ * LTV:CAC — el ratio en veces (3 = "cada cliente deja 3× lo que costó traerlo").
+ *
+ * Los rangos que llegaron tenían un hueco (nada cubría 2x-2,5x) y un solape
+ * (">3x BIEN" y ">4x EN OBJETIVO" se pisaban en todo valor > 4x). Se cerró el
+ * hueco bajando MEJORABLE a 2x y se cortó el solape dejando BIEN acotado a
+ * 3x-4x, con EN OBJETIVO reservado a ≥ 4x — el estado mejor, igual que en el
+ * resto del dashboard, donde el azul manda sobre el verde.
+ */
+export const LTV_CAC_MINIMO = 2;
+export const LTV_CAC_SANO = 3;
+export const LTV_CAC_OBJETIVO = 4;
+
+/**
+ * MARGEN EBITDA en % (columna %ebitda), en FRACCIÓN 0-1. Umbrales distintos
+ * según se mire el mes suelto o el trimestre: un mes flojo se compensa dentro
+ * del trimestre, así que al trimestre se le exige más.
+ *
+ * El objetivo estacional ("30% en temporada alta, 18-20% en temporada media")
+ * queda como TEXTO FIJO: el proyecto no tiene definido en ningún lado qué meses
+ * son temporada alta y cuáles media para DRC Academy, y no se inventa acá. La
+ * alerta se calcula sólo con los umbrales numéricos de abajo.
+ */
+export const EBITDA_MENSUAL_LIMITE = 0.1;
+export const EBITDA_MENSUAL_OBJETIVO = 0.18;
+export const EBITDA_TRIMESTRAL_LIMITE = 0.15;
+export const EBITDA_TRIMESTRAL_OBJETIVO = 0.22;
+export const EBITDA_OBJETIVO_TEXTO =
+  "Objetivo: 18-20% (30% en temporada alta)";
 
 /**
  * Alerta operativa por umbrales fijos (se pinta en el nivel n3 de la tarjeta).
@@ -227,7 +278,58 @@ export function getAlertaOperativa(
       if (value < 0.25) return { texto: "MEJORABLE", color: "yellow" };
       if (value < CR_OBJETIVO) return { texto: "BIEN", color: "green" };
       return { texto: "EN OBJETIVO", color: "blue" };
+    /**
+     * Churn mensual: > 25% PELIGRO · 20-25% MEJORABLE · ≤ 20% BIEN.
+     *
+     * "BIEN" y "EN OBJETIVO" quedan fundidos en un solo estado verde. Los
+     * umbrales que llegaron ponían "< 20% BIEN" y "= 20% EN OBJETIVO", que
+     * son ambiguos en el borde y además dejarían el azul reservado a un valor
+     * exacto (20,000%) que en la práctica no se da nunca: churn es un cociente
+     * con decimales. Reservar el azul a una franja "excelente" habría exigido
+     * inventar un umbral que nadie definió, así que ≤ 20% —cumplir el objetivo
+     * de churn_obj— se pinta verde y listo.
+     */
+    case "clientes_churn":
+      if (value > CHURN_LIMITE) return { texto: "PELIGRO", color: "red" };
+      if (value > CHURN_OBJETIVO) return { texto: "MEJORABLE", color: "yellow" };
+      return { texto: "BIEN", color: "green" };
+    /** LTV:CAC — ver LTV_CAC_MINIMO/SANO/OBJETIVO para el porqué de los cortes. */
+    case "LTV_CAC":
+      if (value < LTV_CAC_MINIMO) return { texto: "PELIGRO", color: "red" };
+      if (value < LTV_CAC_SANO) return { texto: "MEJORABLE", color: "yellow" };
+      if (value < LTV_CAC_OBJETIVO) return { texto: "BIEN", color: "green" };
+      return { texto: "EN OBJETIVO", color: "blue" };
   }
+}
+
+/** Periodicidad con la que se leen los márgenes del cuadro de resultados. */
+export type PeriodoMargen = "mensual" | "trimestral";
+
+/**
+ * Alerta del margen EBITDA en % (fracción 0-1).
+ *
+ * No pasa por getAlertaOperativa a propósito: aquella descarta los valores ≤ 0
+ * como "sin dato útil", y un EBITDA negativo (jun-26: −6,8%) es justo el caso
+ * que MÁS hay que pintar en rojo.
+ *
+ *   mensual:    < 10% rojo · 10-18% amarillo · > 18% verde
+ *   trimestral: < 15% rojo · 15-22% amarillo · > 22% verde
+ *
+ * Sin estado azul (EN OBJETIVO): los umbrales que llegaron sólo definen tres
+ * bandas para el EBITDA, y no se inventa una cuarta.
+ */
+export function getAlertaEbitda(
+  value: MetricValue,
+  periodo: PeriodoMargen
+): AlertaOperativa | null {
+  if (value === null) return null;
+  const limite =
+    periodo === "mensual" ? EBITDA_MENSUAL_LIMITE : EBITDA_TRIMESTRAL_LIMITE;
+  const objetivo =
+    periodo === "mensual" ? EBITDA_MENSUAL_OBJETIVO : EBITDA_TRIMESTRAL_OBJETIVO;
+  if (value < limite) return { texto: "PELIGRO", color: "red" };
+  if (value <= objetivo) return { texto: "MEJORABLE", color: "yellow" };
+  return { texto: "BIEN", color: "green" };
 }
 
 /**
@@ -394,6 +496,94 @@ export function monthLabelToIndex(label: string): number | null {
   const mes = MONTHS_ES.indexOf(m[1].toLowerCase());
   if (mes < 0) return null;
   return (2000 + Number(m[2])) * 12 + mes;
+}
+
+/**
+ * "feb-26" → "T1-26". Trimestres NATURALES (T1 ene-mar, T2 abr-jun, T3 jul-sep,
+ * T4 oct-dic), que es como cierra el cuadro de resultados. Devuelve null si la
+ * etiqueta no tiene la forma "mmm-yy".
+ */
+export function monthToQuarterLabel(label: string): string | null {
+  const m = /^([a-zé]{3})-(\d{2})$/i.exec(label.trim());
+  if (!m) return null;
+  const mes = MONTHS_ES.indexOf(m[1].toLowerCase());
+  if (mes < 0) return null;
+  return `T${Math.floor(mes / 3) + 1}-${m[2]}`;
+}
+
+/**
+ * Meses de la serie que caen en el MISMO trimestre natural que `month`, en
+ * orden. Sólo devuelve los que existen en el Sheet: si el trimestre está a
+ * medias (jul-26 en un T3 que aún no tiene agosto), devuelve lo que va del
+ * trimestre — el agregado es entonces un "trimestre hasta la fecha", no un
+ * trimestre cerrado, y así se dice en la UI.
+ */
+export function getQuarterMonths(months: string[], month: string): string[] {
+  const q = monthToQuarterLabel(month);
+  if (!q) return month ? [month] : [];
+  return months.filter((m) => monthToQuarterLabel(m) === q);
+}
+
+/**
+ * Meses del trimestre ANTERIOR al de `month` (los que existan en la serie).
+ * Vacío si `month` cae en el primer trimestre del dataset. Se usa para el
+ * comparativo QoQ de las tarjetas cuando se mira el cuadro de resultados por
+ * trimestre, igual que el MoM cuando se mira por mes.
+ */
+export function getPrevQuarterMonths(
+  months: string[],
+  month: string
+): string[] {
+  const q = monthToQuarterLabel(month);
+  if (!q) return [];
+  const quarters: string[] = [];
+  for (const m of months) {
+    const label = monthToQuarterLabel(m);
+    if (label && !quarters.includes(label)) quarters.push(label);
+  }
+  const idx = quarters.indexOf(q);
+  if (idx <= 0) return [];
+  const prev = quarters[idx - 1];
+  return months.filter((m) => monthToQuarterLabel(m) === prev);
+}
+
+/** Suma de una métrica sobre un conjunto de meses. null si ninguno tiene dato. */
+export function getSumAtMonths(
+  kpi: DBKpiData,
+  key: string,
+  months: string[]
+): MetricValue {
+  let total: number | null = null;
+  for (const m of months) {
+    const v = kpi.data[m]?.[key];
+    if (v === null || v === undefined) continue;
+    total = (total ?? 0) + v;
+  }
+  return total;
+}
+
+/**
+ * Ratio agregado de dos columnas sobre varios meses: suma(num) / suma(den).
+ *
+ * Es la forma CORRECTA de llevar un margen (%margenbruto, %ebitda) de mes a
+ * trimestre: promediar los porcentajes mensuales le daría el mismo peso a un
+ * mes de 8.000 € que a uno de 33.000 €. La media ponderada por ingresos es
+ * exactamente el margen del trimestre visto como un solo período.
+ *
+ * Los meses en los que el cuadro de resultados todavía no se cargó vienen como
+ * 0 en las dos columnas: no aportan ni al numerador ni al denominador, así que
+ * no distorsionan (a diferencia de un promedio de %, donde ese 0% sí contaría).
+ */
+export function getRatioAtMonths(
+  kpi: DBKpiData,
+  numKey: string,
+  denKey: string,
+  months: string[]
+): MetricValue {
+  const num = getSumAtMonths(kpi, numKey, months);
+  const den = getSumAtMonths(kpi, denKey, months);
+  if (num === null || den === null || den === 0) return null;
+  return num / den;
 }
 
 /** getLatest pero en valor absoluto — para métricas que el Sheet guarda en negativo (pérdidas). */

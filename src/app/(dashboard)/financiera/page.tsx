@@ -12,6 +12,8 @@ import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { StackedBarChart } from "@/components/ui/StackedBarChart";
 import { BarComparison } from "@/components/ui/BarComparison";
 import { MonthSelect } from "@/components/ui/MonthSelect";
+import { MonthRangeSelect } from "@/components/ui/MonthRangeSelect";
+import { PeriodoToggle } from "@/components/ui/PeriodoToggle";
 import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
 import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -23,23 +25,26 @@ import {
 } from "@/lib/dateFilter";
 import {
   getLatest,
-  getMoM,
   getMoMAtMonth,
   getMoMAbsAtMonth,
   getAverageAtMonth,
   getDeltaAtMonth,
-  getSemaforo,
   getSeries,
   getValueAtMonth,
-  getLtvCacLatest,
-  getLtvCacMoM,
+  getAlertaEbitda,
+  getQuarterMonths,
+  getPrevQuarterMonths,
+  getRatioAtMonths,
+  getSumAtMonths,
+  monthToQuarterLabel,
+  EBITDA_OBJETIVO_TEXTO,
   formatCurrency,
   formatNumber,
   formatPercent,
   formatPointsDelta,
+  type PeriodoMargen,
 } from "@/lib/kpiHelpers";
 import type { DBKpiData, MetricValue } from "@/types/kpi";
-import type { GastosData } from "@/lib/gastos";
 import { CAT, GASTO, GASTO_CAT, INGRESO } from "@/lib/chartColors";
 
 /**
@@ -65,12 +70,27 @@ const CASHFLOW_KEYS = [
   "CF_EBITDA",
 ];
 
+/**
+ * Mes de arranque por defecto del rango de ingresos acumulados: enero del año
+ * del ÚLTIMO mes disponible ("lo que va del año"). Si ese enero no está en la
+ * serie, el primer mes que sí esté de ese año; y si el dataset no llega a
+ * cubrir el año, el primer mes de todos. El año sale del dato y no del reloj a
+ * propósito: si el Sheet se queda atrás, el rango sigue mostrando un período
+ * con datos en vez de uno vacío.
+ */
+function inicioDelAnio(months: string[]): string {
+  const ultimo = months[months.length - 1] ?? "";
+  if (!ultimo) return "";
+  const anio = ultimo.slice(-2);
+  const delAnio = months.filter((m) => m.endsWith(`-${anio}`));
+  return delAnio.find((m) => m.startsWith("ene-")) ?? delAnio[0] ?? months[0];
+}
+
 export default function FinancieraPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
     "/api/kpi",
     60_000
   );
-  const gastos = useLiveData<GastosData>("/api/gastos", 60_000);
   const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
 
   // Memoizado para que el objeto vacío del fallback no sea uno nuevo en cada
@@ -90,15 +110,7 @@ export default function FinancieraPage() {
     [kpiAll, visibleMonths]
   );
 
-  const arpc = getLatest(kpi, "ARPC");
-  const ltv = getLatest(kpi, "LTV");
-  const cac = getLatest(kpi, "CAC");
-  const ltvCac = getLtvCacLatest(kpi);
-  const ingresosAcumulados = getLatest(kpi, "ingresos_acumulados");
   const clientesAcumulados = getLatest(kpi, "clientes_acumulados");
-
-  const cacObj = getLatest(kpi, "CAC_obj");
-  const ltvObj = getLatest(kpi, "LTV_obj");
 
   const ingresosAcumSeries = getSeries(kpi, "ingresos_acumulados");
   const clientesAcumSeries = getSeries(kpi, "clientes_acumulados");
@@ -109,19 +121,63 @@ export default function FinancieraPage() {
     right: kpi.data[month]?.["clientes_acumulados"] ?? null,
   }));
 
-  const gastosData = gastos.data;
-  const gastosTotal = gastosData?.categorias.reduce((s, c) => s + c.monto, 0) ?? 0;
-  const maxGasto = Math.max(...(gastosData?.categorias.map((c) => c.monto) ?? [1]), 1);
+  // Todos los meses del Sheet, sin el filtro de rango de la cabecera: los usan
+  // el bloque de cashflow y la tarjeta de ingresos acumulados, que llevan sus
+  // propios controles.
+  const monthsAll = kpiAll.months;
+
+  // ==========================================================================
+  // INGRESOS ACUMULADOS — tarjeta con rango de fechas a medida.
+  //
+  // Vivía en la página de Ingresos y se mudó acá, junto a clientes acumulados:
+  // los dos acumulados son la misma lectura (cuánto lleva sumado el negocio) y
+  // ahora se leen de un vistazo. Mantiene su propio rango, independiente del
+  // filtro de la cabecera y del desplegable de mes del cashflow.
+  // ==========================================================================
+  const [acumFromChoice, setAcumFromChoice] = useState<string>("");
+  const [acumToChoice, setAcumToChoice] = useState<string>("");
+
+  const acumInicio = monthsAll.includes(acumFromChoice)
+    ? acumFromChoice
+    : inicioDelAnio(monthsAll);
+  const acumFin = monthsAll.includes(acumToChoice)
+    ? acumToChoice
+    : monthsAll[monthsAll.length - 1] ?? "";
+
+  // ingresos_acumulados es un ACUMULADO CORRIDO desde el origen (verificado
+  // contra el Sheet: es estrictamente creciente y cada salto mensual coincide al
+  // céntimo con ingresos_B2C_netos de ese mes — ojo, con el B2C neto, NO con
+  // ingresos_netos, que además incluye B2B y Oritalk). Siendo corrido, lo
+  // acumulado DENTRO del rango es la resta de los dos extremos:
+  //   acumulado(fin) − acumulado(mes anterior al inicio).
+  const acumAlFin = getValueAtMonth(kpiAll, "ingresos_acumulados", acumFin);
+  const acumBaseMonth = monthsAll[monthsAll.indexOf(acumInicio) - 1] ?? "";
+  const acumBase = acumBaseMonth
+    ? getValueAtMonth(kpiAll, "ingresos_acumulados", acumBaseMonth)
+    : 0;
+  const acumEnPeriodo = acumAlFin === null ? null : acumAlFin - (acumBase ?? 0);
+
+  // Suma de ingresos_netos del mismo rango. NO tiene por qué coincidir con el
+  // acumulado de arriba y no es un error: el acumulado del Sheet sólo suma el
+  // B2C neto, así que la diferencia entre ambas cifras es exactamente el B2B y
+  // el Oritalk del período.
+  const netosEnPeriodo = getSumAtMonths(
+    kpiAll,
+    "ingresos_netos",
+    monthsAll.slice(
+      monthsAll.indexOf(acumInicio),
+      monthsAll.indexOf(acumFin) + 1
+    )
+  );
 
   // ==========================================================================
   // CASHFLOW STATEMENT
   //
   // Bloque independiente del DateRangeFilter de arriba (que sigue mandando
-  // sobre las tarjetas de unit economics y los gráficos de acumulados): sus
-  // tarjetas las controla su propio desplegable de mes y cada gráfico su propio
-  // RangeFilter, sobre TODOS los meses del Sheet (kpiAll).
+  // sobre las tarjetas de acumulados y sus gráficos): sus tarjetas las controla
+  // su propio desplegable de mes y cada gráfico su propio RangeFilter, sobre
+  // TODOS los meses del Sheet (kpiAll).
   // ==========================================================================
-  const monthsAll = kpiAll.months;
 
   const ultimoMesConCashflow = useMemo(() => {
     for (let i = monthsAll.length - 1; i >= 0; i--) {
@@ -161,6 +217,31 @@ export default function FinancieraPage() {
       ? cashBalance / burnRate
       : null;
 
+  // ==========================================================================
+  // COSTES Y MÁRGENES — mensual o trimestral
+  //
+  // El desplegable de mes sigue eligiendo el período; este toggle decide si las
+  // cuatro tarjetas (COGS, margen bruto, OPEX, EBITDA) leen ese mes suelto o el
+  // TRIMESTRE NATURAL que lo contiene. Se aplica al bloque entero y no sólo al
+  // margen bruto a propósito: media fila en mensual y media en trimestral no se
+  // puede leer.
+  // ==========================================================================
+  const [periodo, setPeriodo] = useState<PeriodoMargen>("mensual");
+  const trimestral = periodo === "trimestral";
+
+  // Meses que entran en el período elegido, y los del período anterior (mes
+  // anterior o trimestre anterior) para el comparativo.
+  const periodoMonths = trimestral
+    ? getQuarterMonths(monthsAll, cfMonth)
+    : [cfMonth];
+  const prevPeriodoMonths = trimestral
+    ? getPrevQuarterMonths(monthsAll, cfMonth)
+    : [];
+  const periodoLabel = trimestral
+    ? monthToQuarterLabel(cfMonth) ?? cfMonth
+    : cfMonth;
+  const periodoBadge = trimestral ? "QoQ" : "MoM";
+
   /**
    * MÁRGENES EN % — columnas "%margenbruto" y "%ebitda" de DB_KPI (nombres
    * exactos, sin guion bajo tras el %, verificados contra la cabecera). Vienen
@@ -171,21 +252,65 @@ export default function FinancieraPage() {
    * CF_ingresos 25.234 € = −6,8% = %ebitda. Lo mismo el bruto: 14.851 / 25.234
    * = 58,9% = %margenbruto.
    *
+   * En los meses en los que el cuadro de resultados todavía no se cargó, esas
+   * columnas traen 0 (no vacío): sin este guardia por CF_ingresos, un mes sin
+   * P&L mostraría "0%" y dispararía la alerta roja de EBITDA por falta de dato.
+   *
    * La comparativa va en PUNTOS porcentuales (momDelta), no en % relativo: el
    * EBITDA cruza el cero (de +9,5% en may-26 a −6,8% en jun-26) y ahí el %
    * relativo deja de significar nada.
    */
+  const margenMensual = (pctKey: string, month: string): MetricValue => {
+    const ingresos = getValueAtMonth(kpiAll, "CF_ingresos", month);
+    if (ingresos === null || ingresos === 0) return null;
+    return getValueAtMonth(kpiAll, pctKey, month);
+  };
+
+  /**
+   * El margen del período: la columna de % si es un mes suelto, o la media
+   * PONDERADA por ingresos si es un trimestre — suma(CF_x) / suma(CF_ingresos),
+   * no el promedio de los tres porcentajes mensuales (ver getRatioAtMonths).
+   */
+  const margenPeriodo = (pctKey: string, cfKey: string): MetricValue =>
+    trimestral
+      ? getRatioAtMonths(kpiAll, cfKey, "CF_ingresos", periodoMonths)
+      : margenMensual(pctKey, cfMonth);
+
   const MESES_PROMEDIO = 5;
-  const margenBruto = getValueAtMonth(kpiAll, "%margenbruto", cfMonth);
-  const margenBrutoDelta = getDeltaAtMonth(kpiAll, "%margenbruto", cfMonth);
+  const margenBruto = margenPeriodo("%margenbruto", "CF_margenbruto");
+  const ebitdaPct = margenPeriodo("%ebitda", "CF_EBITDA");
+
+  const margenBrutoPrev = trimestral
+    ? getRatioAtMonths(kpiAll, "CF_margenbruto", "CF_ingresos", prevPeriodoMonths)
+    : null;
+  const ebitdaPctPrev = trimestral
+    ? getRatioAtMonths(kpiAll, "CF_EBITDA", "CF_ingresos", prevPeriodoMonths)
+    : null;
+
+  /** Delta en fracción contra el período anterior (mes anterior o trimestre anterior). */
+  const deltaMargen = (
+    actual: MetricValue,
+    previo: MetricValue,
+    pctKey: string
+  ): MetricValue => {
+    if (!trimestral) return getDeltaAtMonth(kpiAll, pctKey, cfMonth);
+    if (actual === null || previo === null) return null;
+    return actual - previo;
+  };
+
+  const margenBrutoDelta = deltaMargen(
+    margenBruto,
+    margenBrutoPrev,
+    "%margenbruto"
+  );
+  const ebitdaPctDelta = deltaMargen(ebitdaPct, ebitdaPctPrev, "%ebitda");
+
   const margenBrutoAvg = getAverageAtMonth(
     kpiAll,
     "%margenbruto",
     cfMonth,
     MESES_PROMEDIO
   );
-  const ebitdaPct = getValueAtMonth(kpiAll, "%ebitda", cfMonth);
-  const ebitdaPctDelta = getDeltaAtMonth(kpiAll, "%ebitda", cfMonth);
   const ebitdaPctAvg = getAverageAtMonth(
     kpiAll,
     "%ebitda",
@@ -193,15 +318,34 @@ export default function FinancieraPage() {
     MESES_PROMEDIO
   );
 
-  const cfOpex = abs(getValueAtMonth(kpiAll, "CF_OPEX", cfMonth));
-  const cfCogs = abs(getValueAtMonth(kpiAll, "CF_cogs", cfMonth));
-  const ingresosNetosMes = getValueAtMonth(kpiAll, "ingresos_netos", cfMonth);
+  /** Importe de una partida de coste en el período, siempre en magnitud. */
+  const importePeriodo = (key: string): MetricValue =>
+    abs(
+      trimestral
+        ? getSumAtMonths(kpiAll, key, periodoMonths)
+        : getValueAtMonth(kpiAll, key, cfMonth)
+    );
 
-  /** % de una partida sobre los ingresos netos del mes. No existe como columna. */
+  /** Variación del importe contra el período anterior, sobre magnitudes. */
+  const momImporte = (key: string): number | null => {
+    if (!trimestral) return getMoMAbsAtMonth(kpiAll, key, cfMonth);
+    const actual = getSumAtMonths(kpiAll, key, periodoMonths);
+    const previo = getSumAtMonths(kpiAll, key, prevPeriodoMonths);
+    if (actual === null || previo === null || previo === 0) return null;
+    return ((Math.abs(actual) - Math.abs(previo)) / Math.abs(previo)) * 100;
+  };
+
+  const cfOpex = importePeriodo("CF_OPEX");
+  const cfCogs = importePeriodo("CF_cogs");
+  const ingresosNetosPeriodo = trimestral
+    ? getSumAtMonths(kpiAll, "ingresos_netos", periodoMonths)
+    : getValueAtMonth(kpiAll, "ingresos_netos", cfMonth);
+
+  /** % de una partida sobre los ingresos netos del período. No existe como columna. */
   const pctSobreIngresos = (v: MetricValue): MetricValue =>
-    v === null || ingresosNetosMes === null || ingresosNetosMes === 0
+    v === null || ingresosNetosPeriodo === null || ingresosNetosPeriodo === 0
       ? null
-      : v / ingresosNetosMes;
+      : v / ingresosNetosPeriodo;
 
   const cashRows = applyRange(monthsAll, cashRange).map((month) => ({
     month,
@@ -214,12 +358,23 @@ export default function FinancieraPage() {
     cash_balance: kpiAll.data[month]?.["cash_balance"] ?? null,
   }));
 
-  const cascadaRows = applyRange(monthsAll, cascadaRange).map((month) => ({
+  /**
+   * MÁRGENES EN % — el gráfico dejó de mostrar las tres series en euros
+   * (CF_ingresos / CF_margenbruto / CF_EBITDA) porque el nivel de ingresos ya
+   * está en el resto de la página: lo que no se veía era qué PORCIÓN de cada
+   * euro facturado sobrevive a cada tramo de coste. Ahora son dos series en %
+   * sobre los mismos ingresos, así que se comparan entre sí y entre meses sin
+   * que el tamaño del mes las mueva.
+   *
+   * Se leen de "%margenbruto" y "%ebitda" con el mismo guardia por CF_ingresos
+   * que las tarjetas: en los meses sin cuadro de resultados esas columnas traen
+   * 0 y dibujarían un 0% falso en vez de un hueco.
+   */
+  const margenesRows = applyRange(monthsAll, cascadaRange).map((month) => ({
     month,
-    CF_ingresos: kpiAll.data[month]?.["CF_ingresos"] ?? null,
-    CF_margenbruto: kpiAll.data[month]?.["CF_margenbruto"] ?? null,
+    "%margenbruto": margenMensual("%margenbruto", month),
     // El EBITDA sí puede ser negativo (jun-26 lo es) y se grafica tal cual.
-    CF_EBITDA: kpiAll.data[month]?.["CF_EBITDA"] ?? null,
+    "%ebitda": margenMensual("%ebitda", month),
   }));
 
   // "CF_G&A" lleva el & literal en la cabecera del Sheet, así que la clave del
@@ -249,7 +404,7 @@ export default function FinancieraPage() {
       <PageHeader
         eyebrow="05 · Situación financiera"
         title="La foto financiera completa"
-        description="Unit economics, acumulados, cashflow statement y estructura de gastos. El filtro de rango afecta a las tarjetas y gráficos de unit economics; el cashflow tiene sus propios controles."
+        description="Acumulados y cashflow statement. El filtro de rango de acá arriba manda sobre clientes acumulados y sus gráficos; los ingresos acumulados llevan su propio rango de fechas y el cashflow su propio desplegable de mes."
         right={<LiveIndicator fetchedAt={fetchedAt} error={error} />}
         filter={
           hasAnyData ? (
@@ -269,34 +424,71 @@ export default function FinancieraPage() {
 
       {hasAnyData && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KpiCard label="ARPC" value={formatCurrency(arpc)} mom={getMoM(kpi, "ARPC")} />
+          {/*
+            LOS DOS ACUMULADOS, y nada más.
+
+            La fila de unit economics que vivía acá (ARPC, LTV, CAC, LTV:CAC,
+            ingresos acumulados) duplicaba tarjeta por tarjeta lo que ya está
+            —con su mes elegible y sus alertas— en Resumen, Captación y
+            Retención. Se quedó sólo clientes acumulados, que no está en ninguna
+            otra página, y al lado se mudaron los ingresos acumulados desde la
+            página de Ingresos: los dos acumulados son la misma lectura y ahora
+            se leen juntos.
+
+            La tarjeta de ingresos acumulados trae su propio rango de fechas y
+            trabaja sobre TODOS los meses del Sheet; clientes acumulados sigue
+            el filtro de rango de la cabecera.
+          */}
+          {/* items-start: sin estirar, la tarjeta de clientes acumulados (un
+              único número) no se infla al alto de la de ingresos, que lleva
+              selector, sub-valores y pie. */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
             <KpiCard
-              label="LTV"
-              value={formatCurrency(ltv)}
-              mom={getMoM(kpi, "LTV")}
-              semaforo={getSemaforo(ltv, ltvObj, false)}
+              label="Clientes acumulados"
+              value={formatNumber(clientesAcumulados)}
             />
             <KpiCard
-              label="CAC"
-              value={formatCurrency(cac)}
-              mom={getMoM(kpi, "CAC")}
-              momIsGoodWhenPositive={false}
-              semaforo={getSemaforo(cac, cacObj, true)}
+              className="lg:col-span-2"
+              label="Ingresos acumulados"
+              value={formatCurrency(acumEnPeriodo)}
+              action={
+                <MonthRangeSelect
+                  months={monthsAll}
+                  from={acumInicio}
+                  to={acumFin}
+                  onChange={(f, t) => {
+                    setAcumFromChoice(f);
+                    setAcumToChoice(t);
+                  }}
+                />
+              }
+              subValues={[
+                {
+                  label: "Suma de ingresos netos",
+                  value: formatCurrency(netosEnPeriodo),
+                },
+                {
+                  label: `Acumulado total a ${acumFin}`,
+                  value: formatCurrency(acumAlFin),
+                },
+              ]}
+              hint={
+                <>
+                  <div>
+                    {acumInicio === acumFin
+                      ? `Sólo ${acumFin}`
+                      : `Rango ${acumInicio} → ${acumFin}`}
+                    {acumBaseMonth
+                      ? ` · acumulado(${acumFin}) − acumulado(${acumBaseMonth})`
+                      : " · sin mes previo: incluye lo acumulado antes del Sheet"}
+                  </div>
+                  <div>
+                    La columna ingresos_acumulados del Sheet suma el B2C neto; la
+                    diferencia con los ingresos netos es el B2B y el Oritalk.
+                  </div>
+                </>
+              }
             />
-            <KpiCard
-              label="LTV : CAC"
-              value={ltvCac !== null ? `${formatNumber(ltvCac)}x` : "—"}
-              mom={getLtvCacMoM(kpi)}
-            />
-            {/* La tarjeta "Margen neto (EBITDA)" que vivía acá leía NM_ebitda,
-                que NO es una columna de DB_KPI (113 cabeceras revisadas): estaba
-                en "—" desde siempre. El margen EBITDA en % es %ebitda, y ahora
-                tiene su propia tarjeta —con media móvil y todo— en el bloque de
-                cashflow, junto al margen bruto y al resto del cuadro de
-                resultados del que sale. */}
-            <KpiCard label="Ingresos acumulados" value={formatCurrency(ingresosAcumulados)} />
-            <KpiCard label="Clientes acumulados" value={formatNumber(clientesAcumulados)} />
           </div>
 
           <div className="grid lg:grid-cols-2 gap-4">
@@ -384,64 +576,116 @@ export default function FinancieraPage() {
                 />
               </div>
 
-              {/* --- Los dos márgenes en %, con su media móvil --- */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <KpiCard
-                  label="Margen bruto"
-                  value={formatPercent(margenBruto)}
-                  momDelta={
-                    margenBrutoDelta === null ? null : margenBrutoDelta * 100
-                  }
-                  formatDelta={formatPointsDelta}
-                  subValues={[
-                    {
-                      label: `Promedio ${MESES_PROMEDIO}M`,
-                      value: formatPercent(margenBrutoAvg),
-                    },
-                  ]}
-                  hint="Lo que queda de cada euro facturado después del coste directo (COGS)."
-                />
-                <KpiCard
-                  label="EBITDA"
-                  value={formatPercent(ebitdaPct)}
-                  momDelta={ebitdaPctDelta === null ? null : ebitdaPctDelta * 100}
-                  formatDelta={formatPointsDelta}
-                  subValues={[
-                    {
-                      label: `Promedio ${MESES_PROMEDIO}M`,
-                      value: formatPercent(ebitdaPctAvg),
-                    },
-                  ]}
-                  hint="Lo que queda de cada euro facturado después del COGS y del OPEX."
-                />
-              </div>
+              {/* --- Costes y márgenes: COGS → margen bruto, OPEX → EBITDA ---
+                  Cada fila lee de izquierda a derecha como la cascada: el coste
+                  primero, el margen que deja después. */}
+              <div>
+                <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-drc-ink">
+                      Costes y márgenes · {periodoLabel}
+                    </h4>
+                    <p className="text-xs text-drc-ink-soft mt-0.5">
+                      {trimestral
+                        ? `Trimestre natural del mes elegido${
+                            periodoMonths.length > 0
+                              ? ` (${periodoMonths.join(", ")})`
+                              : ""
+                          }. Los importes se suman y los márgenes se ponderan por ingresos.`
+                        : "Mes elegido en el desplegable de arriba."}
+                    </p>
+                  </div>
+                  <PeriodoToggle value={periodo} onChange={setPeriodo} />
+                </div>
 
-              {/* --- OPEX y COGS, cada uno con su peso sobre ingresos netos --- */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <KpiCard
-                  label="OPEX"
-                  value={formatCurrency(cfOpex)}
-                  mom={getMoMAbsAtMonth(kpiAll, "CF_OPEX", cfMonth)}
-                  momIsGoodWhenPositive={false}
-                  subValues={[
-                    {
-                      label: "% s/ ingresos netos",
-                      value: formatPercent(pctSobreIngresos(cfOpex)),
-                    },
-                  ]}
-                />
-                <KpiCard
-                  label="COGS"
-                  value={formatCurrency(cfCogs)}
-                  mom={getMoMAbsAtMonth(kpiAll, "CF_cogs", cfMonth)}
-                  momIsGoodWhenPositive={false}
-                  subValues={[
-                    {
-                      label: "% s/ ingresos netos",
-                      value: formatPercent(pctSobreIngresos(cfCogs)),
-                    },
-                  ]}
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <KpiCard
+                    label="COGS"
+                    value={formatCurrency(cfCogs)}
+                    mom={momImporte("CF_cogs")}
+                    momIsGoodWhenPositive={false}
+                    period={periodoBadge}
+                    subValues={[
+                      {
+                        label: "% s/ ingresos netos",
+                        value: formatPercent(pctSobreIngresos(cfCogs)),
+                      },
+                    ]}
+                  />
+                  <KpiCard
+                    label="Margen bruto"
+                    value={formatPercent(margenBruto)}
+                    momDelta={
+                      margenBrutoDelta === null ? null : margenBrutoDelta * 100
+                    }
+                    formatDelta={formatPointsDelta}
+                    period={periodoBadge}
+                    subValues={[
+                      trimestral
+                        ? {
+                            label: "Trimestre anterior",
+                            value: formatPercent(margenBrutoPrev),
+                          }
+                        : {
+                            label: `Promedio ${MESES_PROMEDIO}M`,
+                            value: formatPercent(margenBrutoAvg),
+                          },
+                    ]}
+                    hint="Lo que queda de cada euro facturado después del coste directo (COGS)."
+                  />
+                  <KpiCard
+                    label="OPEX"
+                    value={formatCurrency(cfOpex)}
+                    mom={momImporte("CF_OPEX")}
+                    momIsGoodWhenPositive={false}
+                    period={periodoBadge}
+                    subValues={[
+                      {
+                        label: "% s/ ingresos netos",
+                        value: formatPercent(pctSobreIngresos(cfOpex)),
+                      },
+                    ]}
+                  />
+                  {/* El objetivo estacional va como TEXTO FIJO: el proyecto no
+                      tiene definido qué meses son temporada alta y cuáles media
+                      para DRC Academy, así que la tarjeta no intenta deducirlo
+                      del mes elegido. La alerta sale sólo de los umbrales
+                      numéricos (ver getAlertaEbitda). */}
+                  <KpiCard
+                    label="EBITDA"
+                    value={formatPercent(ebitdaPct)}
+                    momDelta={
+                      ebitdaPctDelta === null ? null : ebitdaPctDelta * 100
+                    }
+                    formatDelta={formatPointsDelta}
+                    period={periodoBadge}
+                    alerta={getAlertaEbitda(ebitdaPct, periodo)}
+                    subValues={[
+                      trimestral
+                        ? {
+                            label: "Trimestre anterior",
+                            value: formatPercent(ebitdaPctPrev),
+                          }
+                        : {
+                            label: `Promedio ${MESES_PROMEDIO}M`,
+                            value: formatPercent(ebitdaPctAvg),
+                          },
+                    ]}
+                    hint={
+                      <>
+                        <div>
+                          Lo que queda de cada euro facturado después del COGS y
+                          del OPEX.
+                        </div>
+                        <div>
+                          {trimestral
+                            ? "Umbrales trimestrales: < 15% peligro · 15-22% mejorable · > 22% bien."
+                            : `${EBITDA_OBJETIVO_TEXTO} · < 10% peligro · 10-18% mejorable · > 18% bien.`}
+                        </div>
+                      </>
+                    }
+                  />
+                </div>
               </div>
 
               {/* --- Entradas vs. salidas de caja --- */}
@@ -486,31 +730,26 @@ export default function FinancieraPage() {
                 />
               </Panel>
 
-              {/* --- Cascada ingresos → margen bruto → EBITDA --- */}
+              {/* --- Márgenes en % sobre ingresos --- */}
               <Panel
-                title="De ingresos a EBITDA"
-                description="Las tres paradas de la cascada en el tiempo: lo que entra, lo que queda después del coste directo (margen bruto) y lo que queda después del OPEX (EBITDA). La distancia vertical entre líneas es cada tramo de coste."
+                title="Margen bruto y EBITDA sobre ingresos"
+                description="Las dos paradas de la cascada en PORCENTAJE de los ingresos del mes, no en euros: qué porción de cada euro facturado sobrevive al coste directo (margen bruto) y qué porción sobrevive además al OPEX (EBITDA). La distancia vertical entre las dos líneas es el peso del OPEX. Los meses sin cuadro de resultados cargado quedan sin punto."
                 action={
                   <RangeFilter value={cascadaRange} onChange={setCascadaRange} />
                 }
               >
                 <MultiTrendChart
-                  data={cascadaRows}
+                  data={margenesRows}
+                  legendInSeriesOrder
                   series={[
                     {
-                      key: "CF_ingresos",
-                      label: "Ingresos",
-                      color: INGRESO.fuerte,
-                    },
-                    {
-                      key: "CF_margenbruto",
+                      key: "%margenbruto",
                       label: "Margen bruto",
                       color: INGRESO.medio,
                     },
-                    { key: "CF_EBITDA", label: "EBITDA", color: CAT.verde },
+                    { key: "%ebitda", label: "EBITDA", color: CAT.verde },
                   ]}
-                  valueFormatter={(v) => formatCurrency(v)}
-                  yAxisWidth={72}
+                  valueFormatter={(v) => formatPercent(v)}
                 />
               </Panel>
 
@@ -553,54 +792,12 @@ export default function FinancieraPage() {
             </div>
           </section>
 
-          <Panel
-            title="Estructura de gastos"
-            description={
-              gastosData?.esPlaceholder
-                ? "Módulo desacoplado y listo — placeholder hasta conectar la API interna de gastos."
-                : undefined
-            }
-          >
-            {!gastosData || gastosData.categorias.length === 0 ? (
-              <EmptyState label="Sin datos de gastos" />
-            ) : (
-              <>
-                {gastosData.esPlaceholder && (
-                  <div className="mb-4 rounded-lg border border-drc-yellow/40 bg-drc-yellow/10 px-3 py-2 text-xs text-drc-ink">
-                    Estos valores son un placeholder (todos en 0€). Cuando el
-                    software propio de gestión exponga gastos operativos, este
-                    panel se conecta reemplazando <code className="tabular">readGastos()</code>{" "}
-                    en <code className="tabular">src/lib/gastos.ts</code> — la UI no cambia.
-                  </div>
-                )}
-                <div className="space-y-2.5">
-                  {gastosData.categorias.map((cat) => (
-                    <div key={cat.nombre}>
-                      <div className="flex items-baseline justify-between text-xs mb-1">
-                        <span className="text-drc-ink">{cat.nombre}</span>
-                        <span className="tabular text-drc-ink-soft">
-                          {formatCurrency(cat.monto)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-drc-bg overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${(cat.monto / maxGasto) * 100}%`,
-                            background: GASTO.base,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <div className="pt-2 mt-2 border-t border-drc-line flex justify-between text-sm font-medium">
-                    <span>Total</span>
-                    <span className="tabular">{formatCurrency(gastosTotal)}</span>
-                  </div>
-                </div>
-              </>
-            )}
-          </Panel>
+          {/* El panel "Estructura de gastos" que cerraba la página mostraba las
+              categorías del placeholder de src/lib/gastos.ts, todas en 0 €:
+              ocupaba pantalla sin decir nada, y el desglose real de coste ya
+              está arriba (COGS, personal, marketing y G&A del Sheet). El módulo
+              gastos.ts y su endpoint /api/gastos se dejan en el repo para
+              cuando el software de gestión exponga gastos operativos. */}
         </div>
       )}
     </>

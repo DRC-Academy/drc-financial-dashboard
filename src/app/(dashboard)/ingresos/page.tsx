@@ -12,7 +12,6 @@ import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { StackedBarChart } from "@/components/ui/StackedBarChart";
 import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
 import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
-import { MonthRangeSelect } from "@/components/ui/MonthRangeSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   getValueAtMonth,
@@ -46,22 +45,6 @@ function subOrNull(a: MetricValue, b: MetricValue): MetricValue {
   return (a ?? 0) - (b ?? 0);
 }
 
-/**
- * Mes de arranque por defecto del rango de acumulados: enero del año del ÚLTIMO
- * mes disponible ("lo que va del año"). Si ese enero no está en la serie, el
- * primer mes que sí esté de ese año; y si el dataset no llega a cubrir el año,
- * el primer mes de todos. El año sale del dato y no del reloj a propósito: si
- * el Sheet se queda atrás, el rango sigue mostrando un período con datos en vez
- * de uno vacío.
- */
-function inicioDelAnio(months: string[]): string {
-  const ultimo = months[months.length - 1] ?? "";
-  if (!ultimo) return "";
-  const anio = ultimo.slice(-2);
-  const delAnio = months.filter((m) => m.endsWith(`-${anio}`));
-  return delAnio.find((m) => m.startsWith("ene-")) ?? delAnio[0] ?? months[0];
-}
-
 export default function IngresosPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
     "/api/kpi",
@@ -84,12 +67,6 @@ export default function IngresosPage() {
   const [canalRange, setCanalRange] = useState(0);
   const [pedRange, setPedRange] = useState(0);
   const [aovRange, setAovRange] = useState(0);
-  // La tarjeta de ingresos acumulados tiene su propio rango a medida (mes de
-  // inicio y mes de fin), independiente del de los gráficos y del desplegable
-  // de mes de las tarjetas. "" = todavía sin elegir → se usa el rango por
-  // defecto ("lo que va del año").
-  const [acumFromChoice, setAcumFromChoice] = useState<string>("");
-  const [acumToChoice, setAcumToChoice] = useState<string>("");
 
   // ---- Fila 1 · Ingresos netos + MRR ----
   const ingresosNetos = getValueAtMonth(kpi, "ingresos_netos", activeMonth);
@@ -132,45 +109,6 @@ export default function IngresosPage() {
   const pedidos = getValueAtMonth(kpi, "pedidos", activeMonth);
   const aov = getValueAtMonth(kpi, "AOV", activeMonth);
   const aovNuevos = getValueAtMonth(kpi, "AOV_nuevos", activeMonth);
-
-  // ---- Ingresos acumulados con rango de fechas a medida ----
-  // Los dos extremos son libres (no una ventana móvil contra el final de la
-  // serie). Por defecto, lo que va del año: de enero del año del último mes con
-  // dato hasta ese último mes.
-  const acumInicio = months.includes(acumFromChoice)
-    ? acumFromChoice
-    : inicioDelAnio(months);
-  const acumFin = months.includes(acumToChoice)
-    ? acumToChoice
-    : months[months.length - 1] ?? "";
-
-  // ingresos_acumulados es un ACUMULADO CORRIDO desde el origen (verificado
-  // contra el Sheet: es estrictamente creciente y cada salto mensual coincide al
-  // céntimo con ingresos_B2C_netos de ese mes — ojo, con el B2C neto, NO con
-  // ingresos_netos, que además incluye B2B y Oritalk). Siendo corrido, lo
-  // acumulado DENTRO del rango es la resta de los dos extremos:
-  //   acumulado(fin) − acumulado(mes anterior al inicio).
-  const ingresosAcumulados = getValueAtMonth(kpi, "ingresos_acumulados", acumFin);
-  const acumBaseMonth = months[months.indexOf(acumInicio) - 1] ?? "";
-  const acumBase = acumBaseMonth
-    ? getValueAtMonth(kpi, "ingresos_acumulados", acumBaseMonth)
-    : 0;
-  const acumEnPeriodo =
-    ingresosAcumulados === null ? null : ingresosAcumulados - (acumBase ?? 0);
-
-  // Suma de ingresos_netos del mismo rango. NO tiene por qué coincidir con el
-  // acumulado de arriba y no es un error: el acumulado del Sheet sólo suma el
-  // B2C neto, así que la diferencia entre ambas cifras es exactamente el B2B y
-  // el Oritalk del período.
-  const rangoMonths = months.slice(
-    months.indexOf(acumInicio),
-    months.indexOf(acumFin) + 1
-  );
-  const netosEnPeriodo = rangoMonths.reduce<MetricValue>((acc, m) => {
-    const v = kpi.data[m]?.["ingresos_netos"] ?? null;
-    if (v === null) return acc;
-    return (acc ?? 0) + v;
-  }, null);
 
   // ---- Gráfico · mix de ingresos por línea de negocio (apilado) ----
   const mixRows = applyRange(months, mixRange).map((month) => ({
@@ -334,48 +272,9 @@ export default function IngresosPage() {
             </div>
           </div>
 
-          {/* --- Fila · Ingresos acumulados, con su rango de fechas a medida --- */}
-          <KpiCard
-            label="Ingresos acumulados"
-            value={formatCurrency(acumEnPeriodo)}
-            action={
-              <MonthRangeSelect
-                months={months}
-                from={acumInicio}
-                to={acumFin}
-                onChange={(f, t) => {
-                  setAcumFromChoice(f);
-                  setAcumToChoice(t);
-                }}
-              />
-            }
-            subValues={[
-              {
-                label: "Suma de ingresos netos",
-                value: formatCurrency(netosEnPeriodo),
-              },
-              {
-                label: `Acumulado total a ${acumFin}`,
-                value: formatCurrency(ingresosAcumulados),
-              },
-            ]}
-            hint={
-              <>
-                <div>
-                  {acumInicio === acumFin
-                    ? `Sólo ${acumFin}`
-                    : `Rango ${acumInicio} → ${acumFin}`}
-                  {acumBaseMonth
-                    ? ` · acumulado(${acumFin}) − acumulado(${acumBaseMonth})`
-                    : " · sin mes previo: incluye lo acumulado antes del Sheet"}
-                </div>
-                <div>
-                  La columna ingresos_acumulados del Sheet suma el B2C neto; la
-                  diferencia con los ingresos netos es el B2B y el Oritalk.
-                </div>
-              </>
-            }
-          />
+          {/* La tarjeta "Ingresos acumulados" con su rango de fechas a medida se
+              mudó a Situación financiera, al lado de clientes acumulados: los
+              dos acumulados son la misma lectura y ahora se leen juntos. */}
 
           {/* --- Gráfico · mix de ingresos por línea de negocio --- */}
           <Panel
