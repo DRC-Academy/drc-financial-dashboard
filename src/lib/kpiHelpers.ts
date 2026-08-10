@@ -499,6 +499,39 @@ export function monthLabelToIndex(label: string): number | null {
 }
 
 /**
+ * FORMATO DE MES DE LA API EXTERNA — "YYYY-MM" (ISO), el que habla el endpoint
+ * de gasto en profesores de DRC Gestión. Convive con el "mmm-yy" del Sheet, que
+ * es el que ven los usuarios y el que usan los desplegables; las dos funciones
+ * de abajo son el único puente entre ambos.
+ */
+const API_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** ¿Es un mes "YYYY-MM" válido? Mismo criterio que valida el endpoint remoto. */
+export function isApiMonth(m: string | null | undefined): m is string {
+  return !!m && API_MONTH_RE.test(m);
+}
+
+/**
+ * "jul-26" → "2026-07". Devuelve null si la etiqueta no tiene la forma "mmm-yy"
+ * (incluido el caso de mes vacío, mientras el Sheet todavía no cargó): así el
+ * caller sabe que NO tiene que llamar a la API en vez de pedirle un mes roto.
+ */
+export function monthLabelToApiMonth(label: string): string | null {
+  const m = /^([a-zé]{3})-(\d{2})$/i.exec(label.trim());
+  if (!m) return null;
+  const mes = MONTHS_ES.indexOf(m[1].toLowerCase());
+  if (mes < 0) return null;
+  return `20${m[2]}-${String(mes + 1).padStart(2, "0")}`;
+}
+
+/** "2026-07" → "jul-26", para etiquetar los ejes con el mismo formato que el resto. */
+export function apiMonthToLabel(month: string): string {
+  if (!isApiMonth(month)) return month;
+  const [anio, mes] = month.split("-");
+  return `${MONTHS_ES[Number(mes) - 1]}-${anio.slice(-2)}`;
+}
+
+/**
  * "feb-26" → "T1-26". Trimestres NATURALES (T1 ene-mar, T2 abr-jun, T3 jul-sep,
  * T4 oct-dic), que es como cierra el cuadro de resultados. Devuelve null si la
  * etiqueta no tiene la forma "mmm-yy".

@@ -7,6 +7,10 @@ con Next.js 16 (App Router) + TypeScript + Tailwind + Google Sheets API.
 5 páginas: **Resumen Ejecutivo**, **Captación**, **Ingresos**, **Retención**
 y **Situación Financiera**.
 
+Hay **dos fuentes de datos independientes**: el Google Sheet (casi todo) y el
+endpoint de **DRC Gestión** para el gasto en profesores (ver §11). Si una falla,
+la otra sigue funcionando.
+
 ---
 
 ## 1. Cómo funciona la lectura del Sheet
@@ -104,6 +108,19 @@ Si definís **ambas**, `GOOGLE_PRIVATE_KEY_B64` tiene prioridad. El código
 (`src/lib/sheetsClient.ts`) desescapa los `\n` y saca comillas envolventes si
 quedaron pegadas, pero en paneles web como Vercel conviene usar la Opción A.
 
+### Variables del gasto en profesores
+
+Además de las de Google, la sección **Profesores** de Situación Financiera
+necesita estas dos (ver §11 para el detalle):
+
+```
+DRC_API_URL=https://academy-scheduler-aqpt.vercel.app
+DASHBOARD_EXTERNAL_SECRET=          # lo provee DRC Gestión, no se genera acá
+```
+
+Sin ellas el dashboard **arranca y funciona igual**: sólo esa sección muestra
+"sin datos" (y el servidor loguea que falta la configuración).
+
 ## 6. Correr en local
 
 ```bash
@@ -118,8 +135,10 @@ Abrí `http://localhost:3000` (te redirige a `/resumen`).
 1. Subí el proyecto a un repo de GitHub (privado, como el resto de tus
    proyectos).
 2. Importalo en Vercel.
-3. En **Settings → Environment Variables**, cargá las 3 variables del paso 5
-   para **Production**, **Preview** y **Development**.
+3. En **Settings → Environment Variables**, cargá las variables del paso 5
+   para **Production**, **Preview** y **Development**: las de Google (Sheet ID,
+   email de la Service Account y la private key) más `DRC_API_URL` y
+   `DASHBOARD_EXTERNAL_SECRET` (§11).
 4. Deploy. Cada push a `main` redepliega solo.
 
 ## 8. Estructura del proyecto
@@ -128,6 +147,7 @@ Abrí `http://localhost:3000` (te redirige a `/resumen`).
 src/
   lib/
     sheetsClient.ts   # cliente autenticado de Google Sheets (solo servidor)
+    externalPayouts.ts # gasto en profesores desde DRC Gestión — SOLO servidor (§11)
     cache.ts          # cache en memoria con TTL (60s)
     kpi.ts            # readDBKPI() — SOLO servidor (usa googleapis)
     kpiHelpers.ts     # funciones puras (series, MoM, semáforo, formatos) — cliente y servidor
@@ -157,3 +177,61 @@ Verde `#1E9E3A`, amarillo `#FFC400`, fondo `#F7F7F5`, tipografía Radio Canada
 (texto) + IBM Plex Mono (cifras, para lectura tipo "ledger" en los números).
 El semáforo de color en el borde izquierdo de cada tarjeta KPI compara el
 valor real contra su objetivo (`*_obj` en `DB_KPI`) cuando existe.
+
+## 11. Gasto en profesores (endpoint de DRC Gestión)
+
+La sección **Profesores** de `/financiera` no sale del Sheet: la sirve el
+proyecto **DRC Gestión** (`academy-scheduler`), que expone el gasto ya calculado
+con su lógica de negocio completa — la misma función de liquidación que ve el
+admin en su panel de finanzas. Acá no se reimplementa ningún cálculo ni se lee
+su base de datos.
+
+### Variables de entorno
+
+| Variable | Qué es |
+|---|---|
+| `DRC_API_URL` | URL base del proyecto DRC Gestión, sin barra final (ej. `https://academy-scheduler-aqpt.vercel.app`) |
+| `DASHBOARD_EXTERNAL_SECRET` | Secreto compartido que viaja en la cabecera `X-Dashboard-Secret`. **Lo provee DRC Gestión** (es el valor de su propia variable homónima): no se genera en este proyecto |
+
+Las dos son **de servidor**: nunca les pongas el prefijo `NEXT_PUBLIC_`, eso
+publicaría el secreto en el bundle del navegador.
+
+### Por qué el fetch es siempre desde el servidor
+
+El endpoint remoto **no emite cabeceras CORS a propósito**, para forzar que la
+llamada sea servidor a servidor. En este proyecto:
+
+- `src/lib/externalPayouts.ts` es el único que conoce el secreto — **solo
+  servidor**, igual que `sheetsClient.ts`.
+- La página (`"use client"`) habla con las rutas internas
+  `/api/profesores?month=YYYY-MM` y `/api/profesores/summary?from=&to=`, que son
+  las que llaman al endpoint externo.
+
+### Qué pasa si el endpoint no responde
+
+Nada se rompe. `readPayoutsMonth()` y `readPayoutsSummary()` nunca lanzan:
+loguean el diagnóstico en el servidor y devuelven `null`, y la sección muestra
+el `EmptyState` de siempre. Cada código tiene su mensaje propio, porque no los
+arregla la misma persona:
+
+| Código | Significado | De quién es el problema |
+|---|---|---|
+| 401 | El secreto falta o no coincide | **Nuestro** (config de este proyecto) |
+| 400 | Parámetros mal formados | **Nuestro** (bug al armar la query) |
+| 503 | DRC Gestión no tiene su variable configurada | Del otro lado |
+| 500 | Error interno al calcular la liquidación | Del otro lado |
+| Otros / timeout | Endpoint no desplegado, red caída, etc. | A investigar |
+
+El resto de `/financiera` (que lee de Google Sheets) no se ve afectado: son dos
+fuentes independientes.
+
+### Dos detalles del dato que conviene no olvidar
+
+- **`active_teachers_now` es una foto del presente**, no una serie: son los
+  profesores con al menos un alumno activo *hoy*, y sale igual pidas el mes que
+  pidas. Por eso la tarjeta dice "ahora" y aclara que no cambia con el mes
+  elegido, y por eso **no se grafica** en la tendencia (ahí va
+  `teachers_with_amount`, que sí varía mes a mes).
+- **El gasto promedio se divide por `teachers_with_amount`**, no por
+  `active_teachers_now`: dividir por un número que no varía daría un promedio
+  diluido en los meses viejos sin actividad.
