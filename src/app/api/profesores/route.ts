@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readPayoutsMonth } from "@/lib/externalPayouts";
+import { readPayoutsMonth, currentMonthMadrid } from "@/lib/externalPayouts";
 import { isApiMonth } from "@/lib/kpiHelpers";
 
 /**
@@ -9,6 +9,12 @@ import { isApiMonth } from "@/lib/kpiHelpers";
  * para que el secreto NUNCA salga del servidor: el navegador habla con esta
  * ruta, y es esta ruta la que llama al otro proyecto con la cabecera.
  *
+ * Sin `month` devuelve el mes en curso, igual que hace el endpoint remoto. Así
+ * la página de profesores puede pintar el mes actual en la primera carga, antes
+ * de saber qué meses existen (esa lista la trae /api/profesores/summary), y sin
+ * depender del reloj del navegador. La respuesta dice en `month_year` qué mes
+ * contestó, que es lo que la UI muestra.
+ *
  * Mismo contrato de respuesta que /api/kpi — { ok, data, fetchedAt } con HTTP
  * 200 incluso al fallar—, que es lo que espera useLiveData para mostrar "sin
  * datos" en vez de romper.
@@ -16,7 +22,8 @@ import { isApiMonth } from "@/lib/kpiHelpers";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const month = new URL(request.url).searchParams.get("month") ?? "";
+  const month =
+    new URL(request.url).searchParams.get("month") ?? currentMonthMadrid();
 
   // La página sólo pide meses que ya convirtió con monthLabelToApiMonth, así
   // que esto no debería saltar nunca; si salta, es un bug de este lado y no

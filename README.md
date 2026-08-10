@@ -4,12 +4,12 @@ Dashboard financiero de DRC Academy que lee sus métricas **en tiempo real**
 desde el Google Sheet de KPIs (hoja `DB_KPI` y hojas relacionadas). Construido
 con Next.js 16 (App Router) + TypeScript + Tailwind + Google Sheets API.
 
-5 páginas: **Resumen Ejecutivo**, **Captación**, **Ingresos**, **Retención**
-y **Situación Financiera**.
+Páginas: **Resumen Ejecutivo**, **Captación** (mensual y semanal), **Ingresos**,
+**Retención**, **Situación Financiera**, **Producto** y **Profesores**.
 
 Hay **dos fuentes de datos independientes**: el Google Sheet (casi todo) y el
-endpoint de **DRC Gestión** para el gasto en profesores (ver §11). Si una falla,
-la otra sigue funcionando.
+endpoint de **DRC Gestión**, que alimenta entera la página de Profesores
+(ver §11). Si una falla, la otra sigue funcionando.
 
 ---
 
@@ -178,13 +178,17 @@ Verde `#1E9E3A`, amarillo `#FFC400`, fondo `#F7F7F5`, tipografía Radio Canada
 El semáforo de color en el borde izquierdo de cada tarjeta KPI compara el
 valor real contra su objetivo (`*_obj` en `DB_KPI`) cuando existe.
 
-## 11. Gasto en profesores (endpoint de DRC Gestión)
+## 11. Página de Profesores (endpoint de DRC Gestión)
 
-La sección **Profesores** de `/financiera` no sale del Sheet: la sirve el
+`/profesores` es la única página que no sale del Sheet: la sirve entera el
 proyecto **DRC Gestión** (`academy-scheduler`), que expone el gasto ya calculado
 con su lógica de negocio completa — la misma función de liquidación que ve el
 admin en su panel de finanzas. Acá no se reimplementa ningún cálculo ni se lee
 su base de datos.
+
+Tiene tres tarjetas (activos ahora, gasto del mes, gasto promedio), la **tabla
+de detalle por profesor** (ordenable, con filtros de estado/activo y buscador,
+todo en el cliente sobre el array que ya vino) y la tendencia mensual.
 
 ### Variables de entorno
 
@@ -207,10 +211,17 @@ llamada sea servidor a servidor. En este proyecto:
   `/api/profesores?month=YYYY-MM` y `/api/profesores/summary?from=&to=`, que son
   las que llaman al endpoint externo.
 
+Las dos rutas tienen valores por defecto propios, calculados en el servidor en
+hora de Madrid (la zona con la que DRC Gestión decide cuál es el mes en curso):
+sin `month`, el detalle devuelve el mes actual; sin `from`/`to`, la serie
+devuelve los últimos 12 meses hasta el actual. De esa serie salen también los
+meses del desplegable de la página, y por eso **el mes en curso se puede elegir**
+aunque el Sheet vaya un mes por detrás.
+
 ### Qué pasa si el endpoint no responde
 
 Nada se rompe. `readPayoutsMonth()` y `readPayoutsSummary()` nunca lanzan:
-loguean el diagnóstico en el servidor y devuelven `null`, y la sección muestra
+loguean el diagnóstico en el servidor y devuelven `null`, y la página muestra
 el `EmptyState` de siempre. Cada código tiene su mensaje propio, porque no los
 arregla la misma persona:
 
@@ -222,7 +233,7 @@ arregla la misma persona:
 | 500 | Error interno al calcular la liquidación | Del otro lado |
 | Otros / timeout | Endpoint no desplegado, red caída, etc. | A investigar |
 
-El resto de `/financiera` (que lee de Google Sheets) no se ve afectado: son dos
+El resto del dashboard (que lee de Google Sheets) no se ve afectado: son dos
 fuentes independientes.
 
 ### Dos detalles del dato que conviene no olvidar
@@ -235,3 +246,11 @@ fuentes independientes.
 - **El gasto promedio se divide por `teachers_with_amount`**, no por
   `active_teachers_now`: dividir por un número que no varía daría un promedio
   diluido en los meses viejos sin actividad.
+
+### Lo que todavía NO está
+
+**Facturación y margen bruto por profesor.** Haría falta el importe de
+WooCommerce por alumno, y está sin confirmar si DRC Gestión puede darlo sin
+salir a consultar la API de Woo en vivo. La tabla está preparada para recibirlas
+como columnas nuevas (`sortKey` + celda en `PayoutsTable`), pero no se muestran
+placeholders: una columna vacía se termina leyendo como un cero.

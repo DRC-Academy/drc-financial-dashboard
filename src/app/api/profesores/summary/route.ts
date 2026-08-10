@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readPayoutsSummary } from "@/lib/externalPayouts";
+import { readPayoutsSummary, currentMonthMadrid } from "@/lib/externalPayouts";
 import { isApiMonth } from "@/lib/kpiHelpers";
 
 /**
@@ -15,24 +15,11 @@ import { isApiMonth } from "@/lib/kpiHelpers";
  */
 export const dynamic = "force-dynamic";
 
-/** Ventana por defecto del gráfico. El endpoint remoto admite hasta 60 meses. */
-const MESES_TENDENCIA = 12;
-
 /**
- * Mes en curso en "YYYY-MM", hora de España. Es la zona en la que el otro lado
- * decide qué mes es "el actual" (las clases se dan en Madrid): calcularlo en UTC
- * dejaría el rango corrido durante las primeras horas del día 1 de cada mes.
+ * Ventana por defecto: los meses que ofrece el desplegable de la página de
+ * profesores y que dibuja el gráfico. El endpoint remoto admite hasta 60.
  */
-function currentMonthMadrid(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Madrid",
-    year: "numeric",
-    month: "2-digit",
-  }).formatToParts(new Date());
-  const anio = parts.find((p) => p.type === "year")?.value ?? "";
-  const mes = parts.find((p) => p.type === "month")?.value ?? "";
-  return `${anio}-${mes}`;
-}
+const MESES_TENDENCIA = 12;
 
 /** Resta `n` meses a un "YYYY-MM". */
 function minusMonths(month: string, n: number): string {

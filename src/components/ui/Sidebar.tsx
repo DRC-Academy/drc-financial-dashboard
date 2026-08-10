@@ -12,6 +12,7 @@ const NAV = [
   { href: "/retencion", label: "Retención", eyebrow: "04" },
   { href: "/financiera", label: "Situación financiera", eyebrow: "05" },
   { href: "/producto", label: "Producto", eyebrow: "06" },
+  { href: "/profesores", label: "Profesores", eyebrow: "07" },
 ];
 
 /**

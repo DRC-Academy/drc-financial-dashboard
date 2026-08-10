@@ -11,7 +11,6 @@ import { DualAxisChart } from "@/components/ui/DualAxisChart";
 import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { StackedBarChart } from "@/components/ui/StackedBarChart";
 import { BarComparison } from "@/components/ui/BarComparison";
-import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
 import { MonthSelect } from "@/components/ui/MonthSelect";
 import { MonthRangeSelect } from "@/components/ui/MonthRangeSelect";
 import { PeriodoToggle } from "@/components/ui/PeriodoToggle";
@@ -38,8 +37,6 @@ import {
   getRatioAtMonths,
   getSumAtMonths,
   monthToQuarterLabel,
-  monthLabelToApiMonth,
-  apiMonthToLabel,
   EBITDA_OBJETIVO_TEXTO,
   formatCurrency,
   formatNumber,
@@ -48,7 +45,6 @@ import {
   type PeriodoMargen,
 } from "@/lib/kpiHelpers";
 import type { DBKpiData, MetricValue } from "@/types/kpi";
-import type { PayoutsMonth, PayoutsSummary } from "@/types/profesores";
 import { CAT, GASTO, GASTO_CAT, INGRESO } from "@/lib/chartColors";
 
 /**
@@ -391,70 +387,13 @@ export default function FinancieraPage() {
     "CF_G&A": abs(kpiAll.data[month]?.["CF_G&A"] ?? null),
   }));
 
-  // ==========================================================================
-  // PROFESORES — fuente EXTERNA, independiente del Sheet.
-  //
-  // El gasto en profesores NO está en DB_KPI (111 columnas revisadas) ni en
-  // ninguna pestaña del Sheet: lo calcula DRC Gestión, con la misma función de
-  // liquidación que ve el admin en su panel de finanzas. Acá sólo se lee.
-  //
-  // Las dos llamadas van contra rutas internas (/api/profesores*), nunca contra
-  // el endpoint externo: el secreto vive en el servidor y no sale de ahí (ver
-  // src/lib/externalPayouts.ts). Son dos fuentes independientes del Sheet, así
-  // que un fallo acá deja "sin datos" esta sección y nada más.
-  //
-  // El mes lo manda el desplegable del cashflow, traducido al formato de la API
-  // ("jul-26" → "2026-07"). Mientras el Sheet no cargó no hay mes que pedir y la
-  // URL es null: el hook no llama a nadie en vez de pedir un mes a medio armar.
-  // ==========================================================================
-  const profesMonth = monthLabelToApiMonth(cfMonth);
-  const {
-    data: profesMes,
-    loading: profesLoading,
-    error: profesError,
-  } = useLiveData<PayoutsMonth>(
-    profesMonth ? `/api/profesores?month=${profesMonth}` : null,
-    60_000
-  );
-
-  // La serie va sin parámetros: el rango por defecto (últimos 12 meses hasta el
-  // mes en curso) lo decide el servidor, que es quien sabe qué día es sin
-  // depender del reloj del navegador.
-  const { data: profesSerie } = useLiveData<PayoutsSummary>(
-    "/api/profesores/summary",
-    60_000
-  );
-
-  const gastoProfes: MetricValue = profesMes?.total_amount ?? null;
-  const profesFacturaron: MetricValue = profesMes?.teachers_with_amount ?? null;
-  const profesActivos: MetricValue = profesMes?.active_teachers_now ?? null;
-
   /**
-   * Gasto medio = total del mes ÷ profesores que FACTURARON ese mes.
-   *
-   * No se divide por active_teachers_now a propósito: ese número es una foto de
-   * hoy (los mismos 25 profesores en todos los meses de la serie), así que en un
-   * mes viejo con dos liquidaciones daría un promedio diluido que no describe
-   * nada. Con 0 profesores facturando no hay promedio que calcular → "—".
+   * PROFESORES — ya no vive acá. El gasto en profesores no sale del Sheet sino
+   * del endpoint de DRC Gestión, y con el detalle por profesor (una tabla
+   * entera, con sus filtros) pidió más sitio del que le cabía como sección de
+   * esta página: se mudó a /profesores. El cliente y las rutas internas son los
+   * mismos (src/lib/externalPayouts.ts, /api/profesores*).
    */
-  const gastoMedioProfe: MetricValue =
-    gastoProfes !== null && profesFacturaron !== null && profesFacturaron > 0
-      ? gastoProfes / profesFacturaron
-      : null;
-
-  /**
-   * Serie del gráfico. Se grafican total_amount y teachers_with_amount, y NO
-   * active_teachers_now: el propio endpoint lo marca como foto del presente
-   * (sale idéntico en todos los puntos), y dibujarlo sugeriría una evolución que
-   * no existe. Los meses anteriores a junio de 2026 vienen en 0 y se muestran
-   * igual: un 0 real es información, y esconderlo haría creer que el gasto
-   * arranca antes de lo que arranca.
-   */
-  const profesRows = (profesSerie?.series ?? []).map((punto) => ({
-    month: apiMonthToLabel(punto.month_year),
-    total_amount: punto.total_amount,
-    teachers_with_amount: punto.teachers_with_amount,
-  }));
 
   return (
     <>
@@ -844,125 +783,6 @@ export default function FinancieraPage() {
               cuando el software de gestión exponga gastos operativos. */}
         </div>
       )}
-
-      {/* ======================= PROFESORES =======================
-          FUERA del `hasAnyData` del Sheet a propósito: este bloque no lee de
-          Google Sheets sino de DRC Gestión, y son dos fuentes independientes.
-          Si el Sheet se cae, la tendencia de profesores se sigue viendo (las
-          tarjetas necesitan el mes del desplegable del cashflow, así que ésas
-          sí quedan sin mes y muestran su "sin datos"); y si el que se cae es el
-          endpoint externo, todo lo de arriba sigue intacto. */}
-      <section className="pt-2">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-t border-drc-line pt-6 mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-drc-ink">Profesores</h3>
-            <p className="text-xs text-drc-ink-soft mt-0.5 max-w-2xl">
-              Gasto real en profesores, calculado por DRC Gestión con la misma
-              liquidación que ve el admin en su panel (no sale del Sheet: es otra
-              fuente). Las tarjetas siguen el desplegable de mes del cashflow
-              {cfMonth ? ` (ahora ${cfMonth})` : ""}; el gráfico va por su cuenta
-              con los últimos 12 meses.
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          {profesLoading && !profesMes && (
-            <div className="text-sm text-drc-ink-soft">
-              Cargando gasto en profesores…
-            </div>
-          )}
-
-          {/* Degradación: mismo EmptyState que el resto del dashboard. Cubre
-              tanto "el endpoint no respondió" (401/500/503/timeout, el motivo
-              queda en los logs del servidor) como "todavía no hay mes elegido
-              porque el Sheet no cargó". */}
-          {!profesLoading && !profesMes && (
-            <EmptyState
-              label={
-                profesMonth
-                  ? "Sin datos de profesores: DRC Gestión no respondió"
-                  : "Sin datos de profesores: falta elegir el mes"
-              }
-            />
-          )}
-
-          {profesMes && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Sin semáforo (borde neutral) en las tres tarjetas: no hay
-                  objetivo definido para el gasto en profesores, y un umbral
-                  inventado se lee igual de firme que uno acordado. */}
-              <KpiCard
-                label="Profesores activos ahora"
-                value={formatNumber(profesActivos)}
-                hint={
-                  <>
-                    <div>
-                      Dato actual, no histórico: profesores con al menos un
-                      alumno activo hoy.
-                    </div>
-                    <div>
-                      No cambia con el mes del desplegable
-                      {cfMonth ? ` (ahora ${cfMonth})` : ""} — es una foto del
-                      presente, y por eso tampoco aparece en el gráfico.
-                    </div>
-                  </>
-                }
-              />
-              <KpiCard
-                label={`Gasto en profesores${cfMonth ? ` · ${cfMonth}` : ""}`}
-                value={formatCurrency(gastoProfes)}
-                subValues={[
-                  {
-                    label: "Profesores que facturaron este mes",
-                    value: formatNumber(profesFacturaron),
-                  },
-                ]}
-                hint={
-                  profesMes.is_current_month
-                    ? "Mes en curso: es lo que llevan ganado hasta hoy, no un cierre."
-                    : "Liquidación de ese mes (congelada si ya se pagó)."
-                }
-              />
-              <KpiCard
-                label="Gasto promedio por profesor"
-                value={formatCurrency(gastoMedioProfe)}
-                hint="Gasto del mes ÷ profesores que facturaron ESE mes. No se divide por los activos de ahora: ese número no varía por mes y diluiría el promedio en los meses sin actividad."
-              />
-            </div>
-          )}
-
-          <Panel
-            title="Gasto en profesores y profesores que facturan"
-            description="Últimos 12 meses hasta el mes en curso. Las barras son el gasto del mes y la línea el nº de profesores que facturaron (eje derecho). Los profesores activos NO se grafican: son la foto de hoy, idéntica en todos los meses. Antes de junio de 2026 no hay liquidaciones cargadas, así que la serie arranca en 0 — el 0 es el dato."
-          >
-            <ComposedBarLineChart
-              data={profesRows}
-              bars={[
-                {
-                  key: "total_amount",
-                  label: "Gasto en profesores",
-                  color: GASTO.base,
-                },
-              ]}
-              line={{
-                key: "teachers_with_amount",
-                label: "Profesores que facturaron",
-                color: CAT.oro,
-              }}
-              barFormatter={(v) => formatCurrency(v)}
-              lineFormatter={(v) => formatNumber(v)}
-            />
-          </Panel>
-
-          {profesError && (
-            <p className="text-xs text-drc-ink-soft">
-              No se pudo contactar con DRC Gestión. El resto de la página
-              financiera (Google Sheets) no se ve afectado.
-            </p>
-          )}
-        </div>
-      </section>
     </>
   );
 }

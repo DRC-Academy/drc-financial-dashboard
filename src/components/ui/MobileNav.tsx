@@ -12,6 +12,7 @@ const NAV = [
   { href: "/retencion", label: "Retención" },
   { href: "/financiera", label: "Financiera" },
   { href: "/producto", label: "Producto" },
+  { href: "/profesores", label: "Profesores" },
 ];
 
 /**

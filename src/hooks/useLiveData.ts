@@ -23,10 +23,9 @@ interface UseLiveDataResult<T> {
  * bombardear la API de Sheets. Por defecto refresca cada 60s, igual al TTL
  * del cache de servidor.
  *
- * `url` acepta null para el caso de "todavía no sé qué pedir": la sección de
- * profesores necesita el mes elegido en el desplegable, que no existe hasta que
- * carga el Sheet. Con null no se hace ninguna petición (ni la primera ni el
- * polling) en vez de pedir una URL a medio armar.
+ * `url` acepta null para el caso de "todavía no sé qué pedir" (un filtro que
+ * depende de datos que aún no llegaron): con null no se hace ninguna petición,
+ * ni la primera ni el polling, en vez de pedir una URL a medio armar.
  */
 export function useLiveData<T>(
   url: string | null,

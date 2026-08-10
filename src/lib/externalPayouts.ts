@@ -133,6 +133,25 @@ async function fetchExternal(path: string): Promise<unknown | null> {
   }
 }
 
+/**
+ * Mes en curso en "YYYY-MM", hora de España. Es la zona en la que el otro lado
+ * decide qué mes es "el actual" (las clases se dan en Madrid): calcularlo en UTC
+ * dejaría el rango corrido durante las primeras horas del día 1 de cada mes.
+ *
+ * Vive acá, junto al resto de la semántica del endpoint externo, porque lo usan
+ * las dos rutas internas: el detalle sin `month` y el rango sin `to`.
+ */
+export function currentMonthMadrid(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const anio = parts.find((p) => p.type === "year")?.value ?? "";
+  const mes = parts.find((p) => p.type === "month")?.value ?? "";
+  return `${anio}-${mes}`;
+}
+
 const isNumber = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 
