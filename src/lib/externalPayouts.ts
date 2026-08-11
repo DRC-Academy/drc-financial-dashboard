@@ -183,9 +183,10 @@ export async function readPayoutsMonth(
       );
       if (!isRecord(raw)) return null;
 
-      // Se validan los tres agregados que consume la UI. Si alguno no es un
-      // número, la respuesta no es la que este código sabe leer y vale más
-      // "sin datos" que una tarjeta con un valor inventado.
+      // Se validan los tres agregados de GASTO, que son el esqueleto de la
+      // página. Si alguno no es un número, la respuesta no es la que este
+      // código sabe leer y vale más "sin datos" que una tarjeta con un valor
+      // inventado.
       if (
         !isNumber(raw.total_amount) ||
         !isNumber(raw.teachers_with_amount) ||
@@ -195,6 +196,18 @@ export async function readPayoutsMonth(
           `[externalPayouts] Respuesta inesperada para ${month}: faltan los agregados (total_amount / teachers_with_amount / active_teachers_now).`
         );
         return null;
+      }
+
+      // Facturación y margen (añadidos el 11/08/2026) NO entran en esa
+      // validación a propósito: son datos independientes del gasto, así que si
+      // el otro lado volviera a una versión anterior del endpoint, el mes se
+      // devuelve igual y sólo se vacían esas columnas. Tumbar la página entera
+      // —incluidas las tres tarjetas de gasto que ya funcionaban— por un campo
+      // que se añadió después sería cambiar un hueco por un apagón.
+      if (!isNumber(raw.facturacion_total)) {
+        console.warn(
+          `[externalPayouts] ${month} llega sin facturacion_total: DRC Gestión está respondiendo una versión anterior del endpoint. Facturación y margen quedan en "—"; el gasto no se ve afectado.`
+        );
       }
 
       return raw as unknown as PayoutsMonth;

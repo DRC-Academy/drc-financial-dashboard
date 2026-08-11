@@ -4,6 +4,12 @@ import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { EmptyState } from "./EmptyState";
 import { formatCurrency, formatNumber } from "@/lib/kpiHelpers";
+import {
+  avisoParcialDe,
+  facturacionDe,
+  margenDe,
+} from "@/lib/profesoresHelpers";
+import type { MetricValue } from "@/types/kpi";
 import type { PayoutStatus, TeacherPayout } from "@/types/profesores";
 
 /**
@@ -16,13 +22,22 @@ import type { PayoutStatus, TeacherPayout } from "@/types/profesores";
  * pedirle nada al servidor. Sólo cambiar de MES dispara una petición nueva, y
  * eso lo maneja la página.
  *
- * La estructura de columnas está pensada para crecer: cuando DRC Gestión
- * confirme la facturación por profesor, entra como una COLUMNA más (con su
- * `sortKey` y su celda) sin tocar el orden, los filtros ni el pie.
+ * Facturación y margen se leen SIEMPRE por lib/profesoresHelpers, nunca del
+ * payload crudo: cuando un profesor no tiene ningún alumno con precio resuelto
+ * el endpoint manda `facturacion: 0`, y pintar ese 0 como "0 €" afirmaría que
+ * no factura nada. Los helpers lo devuelven como null → "—", igual que
+ * cualquier otro dato ausente del dashboard.
  */
 
 /** Columnas por las que se puede ordenar. */
-type SortKey = "teacher_name" | "classes_payable" | "total_amount" | "status" | "is_active";
+type SortKey =
+  | "teacher_name"
+  | "classes_payable"
+  | "total_amount"
+  | "facturacion"
+  | "margen"
+  | "status"
+  | "is_active";
 
 type SortDir = "asc" | "desc";
 
@@ -77,6 +92,57 @@ function EstadoBadge({ status }: { status: PayoutStatus }) {
     >
       {conocido ? ESTADO_LABEL[status] : status}
     </span>
+  );
+}
+
+/**
+ * Aviso de facturación incompleta, pegado al nombre del profesor. Amarillo de
+ * "ojo con este número", no rojo de error: el dato no está mal, está a medias.
+ *
+ * El texto va en `title` (tooltip nativo) y en `aria-label`, y además queda
+ * escrito en la fila como texto oculto para que un lector de pantalla no
+ * dependa del hover. El ⚠ es aria-hidden para no leerlo dos veces.
+ */
+function ParcialBadge({ aviso }: { aviso: string }) {
+  return (
+    <span
+      title={aviso}
+      aria-label={aviso}
+      role="img"
+      className="ml-1.5 inline-flex items-center rounded-full bg-drc-yellow/25 px-1 py-0.5 text-[10px] leading-none text-drc-yellow-deep align-middle cursor-help"
+    >
+      <span aria-hidden>⚠</span>
+    </span>
+  );
+}
+
+/**
+ * Celda de importe que respeta el "—". `formatCurrency` ya devuelve "—" con
+ * null, pero el color se decide antes: un guión no se pinta de verde ni de
+ * rojo, porque no hay signo que semaforizar.
+ */
+function ImporteCell({
+  value,
+  semaforo = false,
+}: {
+  value: MetricValue;
+  semaforo?: boolean;
+}) {
+  return (
+    <td
+      className={clsx(
+        "py-2 tabular text-right font-medium",
+        value === null
+          ? "text-drc-ink-soft"
+          : semaforo
+            ? value >= 0
+              ? "text-drc-green"
+              : "text-drc-red"
+            : "text-drc-ink"
+      )}
+    >
+      {formatCurrency(value)}
+    </td>
   );
 }
 
@@ -170,6 +236,22 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
         }
         case "is_active":
           return signo * (Number(a.is_active) - Number(b.is_active));
+        case "facturacion":
+        case "margen": {
+          const leer = sortKey === "facturacion" ? facturacionDe : margenDe;
+          const va = leer(a);
+          const vb = leer(b);
+          // Los "sin dato" van SIEMPRE al final, se ordene ascendente o
+          // descendente (por eso el 1 / -1 no se multiplica por `signo`).
+          // Tratarlos como 0 los metería entre los números y haría parecer que
+          // ese profesor no factura; ponerlos primero al invertir el orden
+          // taparía justo el dato que se está buscando.
+          if (va === null || vb === null) {
+            if (va === vb) return 0;
+            return va === null ? 1 : -1;
+          }
+          return signo * (va - vb);
+        }
         default:
           return signo * (a[sortKey] - b[sortKey]);
       }
@@ -181,6 +263,29 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
   // la suma de las filas de arriba.
   const totalImporte = filas.reduce((s, t) => s + t.total_amount, 0);
   const totalClases = filas.reduce((s, t) => s + t.classes_payable, 0);
+
+  /**
+   * Facturación y margen del pie: suman SÓLO las filas que tienen el dato, y
+   * dicen cuántas son. Con ninguna, el total es "—" y no 0 €.
+   *
+   * Por eso Margen puede no cuadrar con Facturación − Importe: el Importe suma
+   * todas las filas visibles (el gasto se sabe siempre), y estos dos sólo las
+   * que tienen precio resuelto. El tooltip del pie lo dice con el recuento
+   * delante, que es la única forma de que el que reste no crea que sobra dinero.
+   */
+  const sumaConDato = (leer: (t: TeacherPayout) => MetricValue) => {
+    const valores = filas.map(leer).filter((v): v is number => v !== null);
+    return {
+      total: valores.length === 0 ? null : valores.reduce((s, v) => s + v, 0),
+      filas: valores.length,
+    };
+  };
+  const totalFacturacion = sumaConDato(facturacionDe);
+  const totalMargen = sumaConDato(margenDe);
+  const tituloPie = (conDato: number) =>
+    `Suma de ${formatNumber(conDato)} de ${formatNumber(
+      filas.length
+    )} filas visibles: sólo las que tienen precio de plan resuelto.`;
 
   if (teachers.length === 0) {
     return <EmptyState label="Sin detalle por profesor para este mes" />;
@@ -197,7 +302,7 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
     setSortDir(key === "teacher_name" ? "asc" : "desc");
   };
 
-  /** Props de orden, iguales para las cinco cabeceras. */
+  /** Props de orden, iguales para las siete cabeceras. */
   const orden = { sortKey, sortDir, onSort: ordenarPor };
 
   return (
@@ -256,6 +361,12 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
               <SortableTh columna="total_amount" align="right" {...orden}>
                 Importe
               </SortableTh>
+              <SortableTh columna="facturacion" align="right" {...orden}>
+                Facturación
+              </SortableTh>
+              <SortableTh columna="margen" align="right" {...orden}>
+                Margen
+              </SortableTh>
               <SortableTh columna="status" {...orden}>
                 Estado
               </SortableTh>
@@ -265,30 +376,40 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
             </tr>
           </thead>
           <tbody>
-            {filas.map((t) => (
-              <tr key={t.teacher_id} className="border-b border-drc-line/60">
-                <td className="py-2 pr-4 text-drc-ink">{t.teacher_name}</td>
-                <td className="py-2 tabular text-right text-drc-ink-soft">
-                  {formatNumber(t.classes_payable)}
-                </td>
-                <td className="py-2 tabular text-right font-medium text-drc-ink">
-                  {formatCurrency(t.total_amount)}
-                </td>
-                <td className="py-2 pr-4">
-                  <EstadoBadge status={t.status} />
-                </td>
-                <td className="py-2 text-center">
-                  {t.is_active ? (
-                    <span className="text-drc-ink">Sí</span>
-                  ) : (
-                    <span className="text-drc-ink-soft">No</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {filas.map((t) => {
+              const aviso = avisoParcialDe(t);
+              return (
+                <tr key={t.teacher_id} className="border-b border-drc-line/60">
+                  <td className="py-2 pr-4 text-drc-ink">
+                    {t.teacher_name}
+                    {aviso && <ParcialBadge aviso={aviso} />}
+                  </td>
+                  <td className="py-2 tabular text-right text-drc-ink-soft">
+                    {formatNumber(t.classes_payable)}
+                  </td>
+                  <td className="py-2 tabular text-right font-medium text-drc-ink">
+                    {formatCurrency(t.total_amount)}
+                  </td>
+                  <ImporteCell value={facturacionDe(t)} />
+                  {/* El margen sí lleva semáforo: es la única columna con un
+                      signo que significa algo (ganamos o perdemos con él). */}
+                  <ImporteCell value={margenDe(t)} semaforo />
+                  <td className="py-2 pr-4">
+                    <EstadoBadge status={t.status} />
+                  </td>
+                  <td className="py-2 text-center">
+                    {t.is_active ? (
+                      <span className="text-drc-ink">Sí</span>
+                    ) : (
+                      <span className="text-drc-ink-soft">No</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {filas.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-6 text-center text-drc-ink-soft">
+                <td colSpan={7} className="py-6 text-center text-drc-ink-soft">
                   Ningún profesor cumple los filtros aplicados.
                 </td>
               </tr>
@@ -304,12 +425,42 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
               <td className="py-2 tabular text-right">
                 {formatCurrency(totalImporte)}
               </td>
+              <td
+                className="py-2 tabular text-right"
+                title={tituloPie(totalFacturacion.filas)}
+              >
+                {formatCurrency(totalFacturacion.total)}
+              </td>
+              <td
+                className={clsx(
+                  "py-2 tabular text-right",
+                  totalMargen.total !== null &&
+                    (totalMargen.total >= 0 ? "text-drc-green" : "text-drc-red")
+                )}
+                title={tituloPie(totalMargen.filas)}
+              >
+                {formatCurrency(totalMargen.total)}
+              </td>
               <td className="py-2" />
               <td className="py-2" />
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {/* El pie de Margen suma la COLUMNA (sólo filas con precio resuelto) y la
+          tarjeta "Margen total" resta todo el gasto, incluido el de esas filas
+          sin dato. Los dos números son correctos y NO coinciden; sin este aviso,
+          quien los vea juntos asume que uno de los dos está mal. */}
+      {totalMargen.filas < filas.length && (
+        <p className="text-[11px] text-drc-ink-soft">
+          El pie sólo puede sumar las {formatNumber(totalMargen.filas)} filas con
+          precio de plan resuelto (de {formatNumber(filas.length)}). Por eso su
+          Margen es mayor que el de la tarjeta «Margen total» de arriba, que
+          descuenta además lo que se paga a los profesores sin facturación
+          conocida.
+        </p>
+      )}
     </div>
   );
 }

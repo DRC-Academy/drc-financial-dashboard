@@ -16,6 +16,7 @@ import {
   formatCurrency,
   formatNumber,
 } from "@/lib/kpiHelpers";
+import { facturacionTotalDe, margenTotalDe } from "@/lib/profesoresHelpers";
 import type { MetricValue } from "@/types/kpi";
 import type { PayoutsMonth, PayoutsSummary } from "@/types/profesores";
 import { CAT, GASTO } from "@/lib/chartColors";
@@ -108,6 +109,22 @@ export default function ProfesoresPage() {
       : null;
 
   /**
+   * FACTURACIÓN Y MARGEN DEL MES — los dos agregados nuevos del endpoint.
+   *
+   * Los dos pasan por lib/profesoresHelpers y no se leen del payload: cuando
+   * ningún alumno tiene precio resuelto, `facturacion_total` llega en 0 y ese 0
+   * significa "no lo sabemos". El helper lo devuelve como null → "—".
+   *
+   * `facturacion_parcial` es lo contrario de un error: el dato está bien, sólo
+   * que incompleto. Es un PISO, así que el aviso de abajo tiene que estar a la
+   * vista de cualquiera que copie el número a una decisión, no escondido en un
+   * tooltip.
+   */
+  const facturacionTotal = mes ? facturacionTotalDe(mes) : null;
+  const margenTotal = mes ? margenTotalDe(mes) : null;
+  const esParcial = mes?.facturacion_parcial === true;
+
+  /**
    * Serie del gráfico. Se grafican total_amount y teachers_with_amount, y NO
    * active_teachers_now: el propio endpoint lo marca como foto del presente
    * (sale idéntico en todos los puntos), y dibujarlo sugeriría una evolución que
@@ -197,6 +214,72 @@ export default function ProfesoresPage() {
             />
           </div>
 
+          {/* --- Facturación y margen del mes ---
+              Fila aparte de las tres de gasto: son la otra mitad de la cuenta
+              (lo que entra por esos profesores, no lo que cuestan), y el aviso
+              de cifra parcial va justo debajo, pegado a los números que
+              califica. */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <KpiCard
+                label={`Facturación total vía profesores${
+                  mesActivoLabel ? ` · ${mesActivoLabel}` : ""
+                }`}
+                value={formatCurrency(facturacionTotal)}
+                hint="Suma de los planes de WooCommerce de los alumnos asignados a cada profesor, priceados por DRC Gestión. No es la facturación de la academia: sólo cuenta lo que pasa por un profesor con alumnos asignados."
+              />
+              {/* Único semáforo de la página, y por una vez no es un umbral
+                  inventado: el signo del margen lo pone la propia resta. */}
+              <KpiCard
+                label="Margen total"
+                value={formatCurrency(margenTotal)}
+                semaforo={
+                  margenTotal === null
+                    ? "neutral"
+                    : margenTotal >= 0
+                      ? "green"
+                      : "red"
+                }
+                hint={
+                  <>
+                    <div>
+                      Facturación vía profesores − gasto en profesores del mes.
+                    </div>
+                    <div>
+                      Descuenta TODO el gasto, también el de los profesores cuya
+                      facturación no se sabe. Por eso es menor que el total de la
+                      columna Margen de la tabla, que sólo puede sumar las filas
+                      con precio resuelto: de los dos, éste es el prudente.
+                    </div>
+                  </>
+                }
+              />
+            </div>
+
+            {esParcial && (
+              <div className="rounded-lg border border-drc-yellow/40 bg-drc-yellow/10 px-4 py-2.5 text-xs text-drc-ink">
+                <strong>Cifra parcial</strong> — algunos alumnos no tienen precio
+                de plan resuelto en DRC Gestión, así que estas dos cifras son un
+                MÍNIMO: la facturación y el margen reales son iguales o mayores,
+                nunca menores. En la tabla de abajo, cada profesor al que le
+                falte algún precio lleva un ⚠ con el detalle.
+              </div>
+            )}
+
+            {/* Sin un solo alumno priceado no hay cifra que dar, y las dos
+                tarjetas salen en "—". Sin este texto, ese "—" se lee como un
+                fallo del dashboard y no como lo que es: falta cargar precios
+                del otro lado. */}
+            {facturacionTotal === null && (
+              <div className="rounded-lg border border-drc-yellow/40 bg-drc-yellow/10 px-4 py-2.5 text-xs text-drc-ink">
+                <strong>Sin facturación calculable</strong> — ningún alumno tiene
+                precio de plan resuelto en DRC Gestión este mes, así que no hay
+                facturación ni margen que mostrar. No es un 0 €: es un dato que
+                falta, y aparece cuando se carguen los precios de los productos.
+              </div>
+            )}
+          </div>
+
           {/* --- Detalle por profesor ---
               La tabla se queda con el array `teachers` del mes y hace todo el
               filtrado y el orden en el cliente. Cambiar de mes (arriba) es lo
@@ -205,7 +288,7 @@ export default function ProfesoresPage() {
             title={`Detalle por profesor${
               mesActivoLabel ? ` · ${mesActivoLabel}` : ""
             }`}
-            description="Liquidación profesor por profesor del mes elegido. El total del pie suma lo que se está viendo, así que respeta los filtros. Facturación y margen por profesor todavía no están: hacen falta datos que DRC Gestión aún no expone."
+            description="Liquidación profesor por profesor del mes elegido. El total del pie suma lo que se está viendo, así que respeta los filtros. Facturación y margen salen de los planes de los alumnos asignados: un ⚠ junto al nombre avisa de a quién le falta algún precio (su margen es un mínimo), y un « — » significa que no se sabe, nunca 0 €."
           >
             <PayoutsTable teachers={mes.teachers ?? []} />
           </Panel>

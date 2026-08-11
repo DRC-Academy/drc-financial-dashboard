@@ -24,6 +24,37 @@ export interface TeacherPayout {
   classes_payable: number;
   status: PayoutStatus;
   is_active: boolean;
+
+  // ── Facturación y margen (DRC Gestión, 11/08/2026) ────────────────────────
+  //
+  // Salen de los planes de WooCommerce de los alumnos asignados, priceados con
+  // la tabla `product_prices` del otro lado, que se carga A MANO. Mientras esa
+  // tabla esté incompleta, estos campos vienen a medias — y el dashboard tiene
+  // que decirlo, no taparlo.
+  //
+  // CUIDADO CON EL CERO: `facturacion` NO es nullable. Cuando ningún alumno
+  // tiene precio resuelto llega como 0, y ahí el 0 significa "no lo sabemos",
+  // no "no factura". Quien lo pinte tiene que pasar por facturacionDe() de
+  // lib/profesoresHelpers, que lo traduce a null → "—". El campo que sí es
+  // honesto por sí solo es `margen`.
+
+  /** Suma de lo que facturan sus alumnos con precio resuelto. 0 si no hay ninguno. */
+  facturacion: number;
+  /** facturacion − total_amount. null si NINGÚN alumno tiene precio resuelto. */
+  margen: number | null;
+  alumnos_con_precio: number;
+  alumnos_totales: number;
+  /**
+   * true = falta el precio de al menos un alumno (alumnos_con_precio <
+   * alumnos_totales), así que `facturacion` es un PISO y `margen` un MÍNIMO: el
+   * real es igual o mayor. No es un error ni un dato inválido, es un dato
+   * incompleto, y se muestra siempre.
+   *
+   * Ojo con el caso 0 de 0 alumnos: ahí sale FALSE (0 < 0 no se cumple) aunque
+   * no haya nada que facturar. Por eso el aviso de la UI no se decide sólo con
+   * este flag — ver avisoParcialDe() en lib/profesoresHelpers.
+   */
+  facturacion_parcial: boolean;
 }
 
 /** GET /api/external/payouts?month=YYYY-MM */
@@ -44,10 +75,34 @@ export interface PayoutsMonth {
    * fuera una evolución — para eso está teachers_with_amount.
    */
   active_teachers_now: number;
+
+  /** Facturación del mes = suma de la de todos los profesores. Mismo aviso del
+   *  cero que en TeacherPayout.facturacion: 0 puede ser "no lo sabemos". */
+  facturacion_total: number;
+  /**
+   * facturacion_total − total_amount. null si NINGÚN profesor tiene un solo
+   * alumno con precio resuelto (p. ej. `product_prices` vacía del otro lado).
+   *
+   * Es además el interruptor que dice si `facturacion_total` significa algo:
+   * margen_total === null ⟺ ningún alumno priceado ⟺ facturacion_total es 0
+   * por falta de datos, no por falta de facturación.
+   */
+  margen_total: number | null;
+  /** true si a CUALQUIER profesor le falta el precio de algún alumno → las dos
+   *  cifras de arriba son un mínimo. */
+  facturacion_parcial: boolean;
+
   teachers: TeacherPayout[];
 }
 
-/** Un punto de la serie mensual. */
+/**
+ * Un punto de la serie mensual.
+ *
+ * SIN facturación ni margen a propósito: el endpoint de la serie
+ * (/api/external/payouts/summary) sólo devuelve gasto y nº de profesores, así
+ * que no se declaran acá. Para la facturación de un mes hay que pedir ese mes
+ * con /api/profesores?month=.
+ */
 export interface PayoutsSummaryPoint {
   month_year: string;
   is_current_month: boolean;
