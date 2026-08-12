@@ -6,6 +6,9 @@ import clsx from "clsx";
 
 const NAV = [
   { href: "/resumen", label: "Resumen ejecutivo", eyebrow: "01" },
+  // Par diario del anterior: mismo número con sufijo de granularidad, igual que
+  // "02s" para la Captación semanal.
+  { href: "/resumen-diario", label: "Resumen ejecutivo (D)", eyebrow: "01d" },
   { href: "/captacion", label: "Captación", eyebrow: "02" },
   { href: "/captacion-semanal", label: "Captación semanal", eyebrow: "02s" },
   { href: "/ingresos", label: "Ingresos", eyebrow: "03" },

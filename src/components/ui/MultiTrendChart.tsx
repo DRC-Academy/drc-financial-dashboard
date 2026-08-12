@@ -14,7 +14,6 @@ import { EmptyState } from "./EmptyState";
 import { CHART_STROKE_WIDTH } from "@/lib/chartColors";
 
 export interface MultiTrendPoint {
-  month: string;
   [seriesKey: string]: string | number | null;
 }
 
@@ -29,11 +28,28 @@ export function MultiTrendChart({
   valueFormatter,
   yAxisWidth = 48,
   legendInSeriesOrder = false,
+  xKey = "month",
+  xTickFormatter,
+  xMinTickGap = 5,
 }: {
   data: MultiTrendPoint[];
   series: { key: string; label: string; color: string }[];
   height?: number;
   valueFormatter?: (v: number) => string;
+  /**
+   * Campo del eje X. Por defecto "month", que es la granularidad de casi todo
+   * el dashboard; la página diaria pasa "day" (fecha ISO) para no tener que
+   * disfrazar los días de meses.
+   */
+  xKey?: string;
+  /** Cómo se pinta cada tick del eje X (p. ej. "2026-08-12" → "12 ago"). */
+  xTickFormatter?: (v: string) => string;
+  /**
+   * Píxeles mínimos entre ticks del eje X. Con 12 meses da igual, pero con 592
+   * días recharts dibujaría las etiquetas una encima de otra: subirlo es lo que
+   * hace que se muestre un subconjunto legible.
+   */
+  xMinTickGap?: number;
   /**
    * Ancho del eje Y. Los 48px por defecto se quedan cortos en cuanto los ticks
    * son importes de 5-6 cifras ("340.000 €"): recharts no encoge el texto, lo
@@ -63,10 +79,12 @@ export function MultiTrendChart({
       <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke="var(--drc-line)" vertical={false} />
         <XAxis
-          dataKey="month"
+          dataKey={xKey}
           tick={{ fontSize: 11, fill: "var(--drc-ink-soft)" }}
           axisLine={{ stroke: "var(--drc-line)" }}
           tickLine={false}
+          tickFormatter={xTickFormatter}
+          minTickGap={xMinTickGap}
         />
         <YAxis
           tick={{ fontSize: 11, fill: "var(--drc-ink-soft)" }}

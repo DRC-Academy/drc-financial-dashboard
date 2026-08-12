@@ -19,7 +19,6 @@ import {
 } from "@/lib/chartColors";
 
 export interface ComposedPoint {
-  month: string;
   [seriesKey: string]: string | number | null;
 }
 
@@ -41,6 +40,9 @@ export function ComposedBarLineChart({
   height = 260,
   barFormatter,
   lineFormatter,
+  xKey = "month",
+  xTickFormatter,
+  xMinTickGap = 5,
 }: {
   data: ComposedPoint[];
   bars: { key: string; label: string; color: string }[];
@@ -49,6 +51,12 @@ export function ComposedBarLineChart({
   height?: number;
   barFormatter?: (v: number) => string;
   lineFormatter?: (v: number) => string;
+  /** Campo del eje X. Ver la nota equivalente en MultiTrendChart. */
+  xKey?: string;
+  /** Cómo se pinta cada tick del eje X (p. ej. "2026-08-12" → "12 ago"). */
+  xTickFormatter?: (v: string) => string;
+  /** Píxeles mínimos entre ticks — necesario en series de cientos de días. */
+  xMinTickGap?: number;
 }) {
   const seriesKeys = [...bars.map((b) => b.key), line.key];
   const hasData = data.some((row) =>
@@ -61,10 +69,12 @@ export function ComposedBarLineChart({
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke="var(--drc-line)" vertical={false} />
         <XAxis
-          dataKey="month"
+          dataKey={xKey}
           tick={{ fontSize: 11, fill: "var(--drc-ink-soft)" }}
           axisLine={{ stroke: "var(--drc-line)" }}
           tickLine={false}
+          tickFormatter={xTickFormatter}
+          minTickGap={xMinTickGap}
         />
         <YAxis
           yAxisId="left"
