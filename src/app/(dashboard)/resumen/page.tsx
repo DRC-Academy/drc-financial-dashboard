@@ -30,6 +30,7 @@ import {
   formatNumber,
   formatNumberDelta,
   formatPercent,
+  formatPointsDelta,
 } from "@/lib/kpiHelpers";
 import {
   getBlock,
@@ -122,6 +123,23 @@ export default function ResumenPage() {
   // caemos a la constante sólo si el Sheet no la trae, para no inventar nada
   // ni duplicar el número.
   const crObj = getValueAtMonth(kpi, "CR_obj", activeMonth) ?? CR_OBJETIVO;
+
+  /**
+   * MARGEN BRUTO — columna "%margenbruto" (sin guion bajo tras el %), en
+   * FRACCIÓN 0-1 como el resto de tasas del Sheet. No existe ninguna columna
+   * "margen_bruto": lo que hay es ésta y CF_margenbruto, que es el importe en €.
+   *
+   * Mismo guardia que en Situación Financiera: en los meses sin cuadro de
+   * resultados cargado la columna puede venir en 0 (no vacía), y sin mirar
+   * CF_ingresos la tarjeta mostraría un "0%" que no es un margen del cero por
+   * ciento sino un mes sin cerrar.
+   */
+  const cfIngresos = getValueAtMonth(kpi, "CF_ingresos", activeMonth);
+  const margenBruto =
+    cfIngresos === null || cfIngresos === 0
+      ? null
+      : getValueAtMonth(kpi, "%margenbruto", activeMonth);
+  const mbObj = getValueAtMonth(kpi, "MB_obj", activeMonth);
 
   // ---- Gráficos (usan su propio rango, sobre el dataset completo) ----
   const ingresosMrrSeries = applyRange(months, ingRange).map((month) => ({
@@ -256,10 +274,11 @@ export default function ResumenPage() {
               value={formatCurrency(getValueAtMonth(kpi, "AOV", activeMonth))}
               mom={getMoMAtMonth(kpi, "AOV", activeMonth)}
             />
-            {/* Columna "ventas": la de ventas_hugo NO existe en DB_KPI (la tarjeta
-                vieja "Ventas Hugo" mostraba "—" siempre). "ventas" es la única
-                columna de conteo de ventas: cuadra con el embudo de ads
-                (CAC ≈ ads_captacion/ventas, CR_clientes ≈ ventas/leads). */}
+            {/* "ventas" es el TOTAL del mes y cuadra con el embudo de ads
+                (CAC ≈ ads_captacion/ventas, CR_clientes ≈ ventas/leads). El
+                desglose por comercial (ventas_hugo + ventas_martin, que suman
+                exactamente esta columna) vive en Captación, que es donde se
+                mira quién cierra. */}
             <KpiCard
               className="lg:col-span-2"
               label="Ventas"
@@ -319,8 +338,8 @@ export default function ResumenPage() {
             />
           </div>
 
-          {/* --- Fila 4 · Unit economics --- */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {/* --- Fila 4 · Unit economics y margen bruto --- */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {/* ARPC abre la fila: es el ingreso por cliente del que sale el LTV.
                 DB_KPI no trae columna de objetivo para ARPC, así que va sin
                 alerta ni hint (mismo criterio que en Retención). */}
@@ -374,6 +393,21 @@ export default function ResumenPage() {
                   limite={formatPercent(CR_LIMITE)}
                 />
               }
+            />
+            {/* Margen bruto contra su objetivo del Sheet (MB_obj), mismo patrón
+                que LTV: alerta por ratio real/objetivo y el objetivo en el pie.
+                La comparativa va en PUNTOS porcentuales, no en % relativo — es
+                un margen, igual que en Situación Financiera. */}
+            <KpiCard
+              label="Margen bruto"
+              value={formatPercent(margenBruto)}
+              momDelta={(() => {
+                const d = getDeltaAtMonth(kpi, "%margenbruto", activeMonth);
+                return d === null ? null : d * 100;
+              })()}
+              formatDelta={formatPointsDelta}
+              alerta={getAlertaObjetivo(margenBruto, mbObj, false)}
+              hint={mbObj !== null ? `Objetivo: ${formatPercent(mbObj)}` : undefined}
             />
           </div>
 

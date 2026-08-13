@@ -357,6 +357,18 @@ export default function FinancieraPage() {
     return ((Math.abs(actual) - Math.abs(previo)) / Math.abs(previo)) * 100;
   };
 
+  /**
+   * OBJETIVOS DE MARGEN — columnas MB_obj y Ebitda_obj de DB_KPI (ojo con la E
+   * mayúscula de Ebitda_obj: es el nombre exacto de la cabecera). Vienen en
+   * FRACCIÓN 0-1, como el resto de tasas, y son constantes mes a mes, así que
+   * leerlas en `cfMonth` vale igual para la vista mensual y la trimestral.
+   *
+   * Las filas de los meses sin cargar no llegan hasta estas columnas: ahí valen
+   * null y el pie de la tarjeta se omite en vez de mostrar "Objetivo: —".
+   */
+  const mbObj = getValueAtMonth(kpiAll, "MB_obj", cfMonth);
+  const ebitdaObj = getValueAtMonth(kpiAll, "Ebitda_obj", cfMonth);
+
   const cfOpex = importePeriodo("CF_OPEX");
   const cfCogs = importePeriodo("CF_cogs");
   const ingresosNetosPeriodo = trimestral
@@ -605,8 +617,10 @@ export default function FinancieraPage() {
               </div>
 
               {/* --- Costes y márgenes: COGS → margen bruto, OPEX → EBITDA ---
-                  Cada fila lee de izquierda a derecha como la cascada: el coste
-                  primero, el margen que deja después. */}
+                  Cada COLUMNA lee de arriba abajo como la cascada: el coste
+                  primero, el margen que deja después. Los dos márgenes van en
+                  tamaño titular (T) y uno al lado del otro: son la lectura del
+                  bloque y los dos únicos que tienen objetivo en el Sheet. */}
               <div>
                 <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
                   <div>
@@ -641,6 +655,20 @@ export default function FinancieraPage() {
                     ]}
                   />
                   <KpiCard
+                    label="OPEX"
+                    value={formatCurrency(cfOpex)}
+                    mom={momImporte("CF_OPEX")}
+                    momIsGoodWhenPositive={false}
+                    period={periodoBadge}
+                    subValues={[
+                      {
+                        label: "% s/ ingresos netos",
+                        value: formatPercent(pctSobreIngresos(cfOpex)),
+                      },
+                    ]}
+                  />
+                  <KpiCard
+                    size="titular"
                     label="Margen bruto"
                     value={formatPercent(margenBruto)}
                     momDelta={
@@ -659,20 +687,17 @@ export default function FinancieraPage() {
                             value: formatPercent(margenBrutoAvg),
                           },
                     ]}
-                    hint="Lo que queda de cada euro facturado después del coste directo (COGS)."
-                  />
-                  <KpiCard
-                    label="OPEX"
-                    value={formatCurrency(cfOpex)}
-                    mom={momImporte("CF_OPEX")}
-                    momIsGoodWhenPositive={false}
-                    period={periodoBadge}
-                    subValues={[
-                      {
-                        label: "% s/ ingresos netos",
-                        value: formatPercent(pctSobreIngresos(cfOpex)),
-                      },
-                    ]}
+                    hint={
+                      <>
+                        <div>
+                          Lo que queda de cada euro facturado después del coste
+                          directo (COGS).
+                        </div>
+                        {mbObj !== null && (
+                          <div>Objetivo: {formatPercent(mbObj)}</div>
+                        )}
+                      </>
+                    }
                   />
                   {/* El objetivo estacional va como TEXTO FIJO: el proyecto no
                       tiene definido qué meses son temporada alta y cuáles media
@@ -680,6 +705,7 @@ export default function FinancieraPage() {
                       del mes elegido. La alerta sale sólo de los umbrales
                       numéricos (ver getAlertaEbitda). */}
                   <KpiCard
+                    size="titular"
                     label="EBITDA"
                     value={formatPercent(ebitdaPct)}
                     momDelta={
@@ -710,6 +736,17 @@ export default function FinancieraPage() {
                             ? "Umbrales trimestrales: < 15% peligro · 15-22% mejorable · > 22% bien."
                             : `${EBITDA_OBJETIVO_TEXTO} · < 10% peligro · 10-18% mejorable · > 18% bien.`}
                         </div>
+                        {/* El objetivo del Sheet va etiquetado con su columna y
+                            en línea aparte: convive con el estacional de arriba
+                            (18-20% / 30% en temporada alta) sin que se lea como
+                            que uno corrige al otro. La alerta sigue saliendo de
+                            los umbrales, no de esta cifra. */}
+                        {ebitdaObj !== null && (
+                          <div>
+                            Objetivo del Sheet (Ebitda_obj):{" "}
+                            {formatPercent(ebitdaObj)}
+                          </div>
+                        )}
                       </>
                     }
                   />

@@ -43,6 +43,29 @@ const C = {
   metaLine: CANAL.meta,
 };
 
+/**
+ * COMERCIALES — el desglose de ventas por persona que trae DB_KPI. Las claves
+ * son los nombres EXACTOS de las columnas (verificados contra la fila 1 de la
+ * hoja); el Sheet las escribe sin acento ("martin"), y la etiqueta sí lo lleva.
+ *
+ * Es una lista y no dos bloques copiados porque el equipo comercial crece: dar
+ * de alta a alguien nuevo es una línea acá y nada más.
+ */
+const COMERCIALES = [
+  {
+    nombre: "Hugo",
+    ventas: "ventas_hugo",
+    ingresos: "ingresos_hugo",
+    cr: "CR_hugo",
+  },
+  {
+    nombre: "Martín",
+    ventas: "ventas_martin",
+    ingresos: "ingresos_martin",
+    cr: "CR_martin",
+  },
+];
+
 /** Suma dos métricas tratando null como 0, salvo que AMBAS sean null. */
 function sumOrNull(a: MetricValue, b: MetricValue): MetricValue {
   if (a === null && b === null) return null;
@@ -190,18 +213,56 @@ export default function CaptacionPage() {
             />
           </div>
 
-          {/* --- Dona · distribución de ventas del mes --- */}
-          <Panel
-            title={`Distribución de ventas — ${activeMonth}`}
-            description="Ventas por canal en el mes seleccionado (no depende del rango de los gráficos)."
-            className="lg:max-w-2xl"
-          >
-            <DonutChart
-              data={ventasSlices}
-              valueFormatter={(v) => formatNumber(v)}
-              centerLabel="ventas"
-            />
-          </Panel>
+          {/* --- Dona · distribución de ventas del mes, y quién las cerró ---
+              La dona reparte las ventas por CANAL (de dónde vino el alumno) y
+              las tarjetas de al lado por COMERCIAL (quién la cerró): son dos
+              cortes del mismo número, por eso van juntos y no en filas
+              distintas. Cuadran — ventas = ventas_hugo + ventas_martin, e
+              ingresos_ventas = ingresos_hugo + ingresos_martin. */}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Panel
+              className="lg:col-span-2"
+              title={`Distribución de ventas — ${activeMonth}`}
+              description="Ventas por canal en el mes seleccionado (no depende del rango de los gráficos)."
+            >
+              <DonutChart
+                data={ventasSlices}
+                valueFormatter={(v) => formatNumber(v)}
+                centerLabel="ventas"
+              />
+            </Panel>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              {COMERCIALES.map((c) => (
+                <KpiCard
+                  key={c.nombre}
+                  label={c.nombre}
+                  value={formatNumber(getValueAtMonth(kpi, c.ventas, activeMonth))}
+                  subValues={[
+                    {
+                      label: "Ingresos",
+                      value: formatCurrency(
+                        getValueAtMonth(kpi, c.ingresos, activeMonth)
+                      ),
+                    },
+                    {
+                      label: "CR",
+                      value: formatPercent(getValueAtMonth(kpi, c.cr, activeMonth)),
+                    },
+                  ]}
+                  /* Mismos umbrales que CR_clientes: CR_hugo y CR_martin son la
+                     misma tasa (ventas sobre los leads de cada uno) y vienen en
+                     la misma fracción 0-1, así que el corte es comparable. El
+                     chip va junto al título, por eso el hint dice a qué valor de
+                     la tarjeta se refiere. */
+                  alerta={getAlertaOperativa(
+                    "CR_clientes",
+                    getValueAtMonth(kpi, c.cr, activeMonth)
+                  )}
+                  hint="La alerta corresponde al CR."
+                />
+              ))}
+            </div>
+          </div>
 
           {/* --- Fila 3 · Google Ads / Meta Ads --- */}
           <div className="grid gap-4 lg:grid-cols-2">
