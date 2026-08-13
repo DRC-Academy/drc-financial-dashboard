@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
+import { useMesActivo } from "@/hooks/useMesActivo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { MonthSelect } from "@/components/ui/MonthSelect";
@@ -56,11 +57,7 @@ export default function IngresosPage() {
   const hasAnyData = months.length > 0;
 
   // Desplegable de mes → controla SOLO las tarjetas (igual que Resumen/Captación).
-  const [monthChoice, setMonthChoice] = useState<string>("");
-  const activeMonth =
-    monthChoice && months.includes(monthChoice)
-      ? monthChoice
-      : months[months.length - 1] ?? "";
+  const [activeMonth, setMonthChoice] = useMesActivo(months);
 
   // Rangos independientes por gráfico.
   const [mixRange, setMixRange] = useState(0);

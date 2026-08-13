@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
+import { useMesActivo } from "@/hooks/useMesActivo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { MonthSelect } from "@/components/ui/MonthSelect";
@@ -46,11 +47,7 @@ export default function ProductoPage() {
   const months = kpi.months;
   const hasAnyData = months.length > 0;
 
-  const [monthChoice, setMonthChoice] = useState<string>("");
-  const activeMonth =
-    monthChoice && months.includes(monthChoice)
-      ? monthChoice
-      : months[months.length - 1] ?? "";
+  const [activeMonth, setMonthChoice] = useMesActivo(months);
 
   const [mixRange, setMixRange] = useState(0);
 

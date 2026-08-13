@@ -499,6 +499,29 @@ export function monthLabelToIndex(label: string): number | null {
 }
 
 /**
+ * El mes MÁS RECIENTE de una lista de labels "mmm-yy", por CALENDARIO y no por
+ * posición en la lista. `kpi.months` sale de las filas del Sheet en su orden, y
+ * una fila fuera de sitio (o insertada a mitad) no debería decidir qué mes se
+ * muestra por defecto: eso es justo lo que hace que el dashboard se quede en un
+ * mes viejo sin que nadie lo note.
+ *
+ * Los labels que no se pueden parsear se ignoran. Si NINGUNO se puede, cae al
+ * último de la lista —el comportamiento anterior— para no devolver "" cuando la
+ * hoja usa un formato de mes que no conocemos.
+ */
+export function mesMasReciente(months: string[]): string {
+  let mejor = "";
+  let mejorIdx = -Infinity;
+  for (const m of months) {
+    const i = monthLabelToIndex(m);
+    if (i === null || i <= mejorIdx) continue;
+    mejorIdx = i;
+    mejor = m;
+  }
+  return mejor || months[months.length - 1] || "";
+}
+
+/**
  * FORMATO DE MES DE LA API EXTERNA — "YYYY-MM" (ISO), el que habla el endpoint
  * de gasto en profesores de DRC Gestión. Convive con el "mmm-yy" del Sheet, que
  * es el que ven los usuarios y el que usan los desplegables; las dos funciones

@@ -37,6 +37,7 @@ import {
   getRatioAtMonths,
   getSumAtMonths,
   monthToQuarterLabel,
+  mesMasReciente,
   EBITDA_OBJETIVO_TEXTO,
   formatCurrency,
   formatNumber,
@@ -78,6 +79,12 @@ const CASHFLOW_KEYS = [
  * propósito: si el Sheet se queda atrás, el rango sigue mostrando un período
  * con datos en vez de uno vacío.
  */
+/** "jul-26 y ago-26" — coma entre todos menos el último par, que va con "y". */
+function listaEs(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`;
+}
+
 function inicioDelAnio(months: string[]): string {
   const ultimo = months[months.length - 1] ?? "";
   if (!ultimo) return "";
@@ -185,7 +192,7 @@ export default function FinancieraPage() {
       if (CASHFLOW_KEYS.some((k) => rec?.[k] !== null && rec?.[k] !== undefined))
         return monthsAll[i];
     }
-    return monthsAll[monthsAll.length - 1] ?? "";
+    return mesMasReciente(monthsAll);
   }, [kpiAll, monthsAll]);
 
   const [cfMonthChoice, setCfMonthChoice] = useState<string>("");
@@ -193,6 +200,21 @@ export default function FinancieraPage() {
     cfMonthChoice && monthsAll.includes(cfMonthChoice)
       ? cfMonthChoice
       : ultimoMesConCashflow;
+
+  /**
+   * Meses del Sheet POSTERIORES al que muestra este bloque. Por cómo se elige
+   * `ultimoMesConCashflow` —el último con algo cargado— todos ellos están sin
+   * cerrar, así que la lista es literalmente "lo que falta por cargar".
+   *
+   * Existe para que el desfase se VEA. Este es el único desplegable de mes del
+   * dashboard que no arranca en el mes más reciente (el resto usa useMesActivo),
+   * y sin decirlo se lee como que el dashboard se quedó atrás: fue justo el
+   * reporte que llegó cuando el cuadro de resultados iba dos meses por detrás.
+   */
+  const mesesSinCashflow =
+    cfMonth === ultimoMesConCashflow
+      ? monthsAll.slice(monthsAll.indexOf(cfMonth) + 1)
+      : [];
 
   // Rangos independientes por gráfico.
   const [cashRange, setCashRange] = useState(0);
@@ -531,6 +553,16 @@ export default function FinancieraPage() {
                   controla el desplegable de mes de aquí al lado (no el filtro de
                   rango de arriba), y cada gráfico lleva su propio rango.
                 </p>
+                {mesesSinCashflow.length > 0 && (
+                  <p className="text-xs text-drc-yellow-deep mt-1.5 max-w-xl">
+                    Mostrando <b>{cfMonth}</b>, el último mes con el cuadro de
+                    resultados cerrado en el Sheet:{" "}
+                    {listaEs(mesesSinCashflow)}{" "}
+                    {mesesSinCashflow.length > 1 ? "siguen" : "sigue"} sin
+                    cargar. El resto del dashboard sí está en{" "}
+                    {mesMasReciente(monthsAll)}.
+                  </p>
+                )}
               </div>
               <MonthSelect
                 months={monthsAll}
