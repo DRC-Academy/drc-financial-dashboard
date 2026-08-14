@@ -85,28 +85,33 @@ function Aviso({ titulo, children }: { titulo: string; children: ReactNode }) {
 }
 
 /**
- * Estados de suscripción de WooCommerce, en el orden en que se leen: primero los
- * que DAN ACCESO (y por tanto facturan), después los que no.
+ * Estados de suscripción de WooCommerce que SE MUESTRAN, en el orden en que se
+ * leen: primero los que dan acceso (y por tanto facturan), después los que
+ * todavía pueden darlo.
  *
- * `pending-cancel` es el que más se mira de todos: ya cancelaron pero siguen
- * pagando hasta que termine el ciclo, así que es churn que todavía no se ve en
- * ninguna otra parte del dashboard.
+ * `cancelled` queda FUERA a propósito: son bajas ya consumadas y esta sección
+ * mira quién está activo hoy, no el cementerio (que además es el número más
+ * grande de todos —161 sobre 315— y se comía la lectura de la lista). Por eso
+ * las filas visibles no suman el total de WooCommerce, y por eso el pie ya no
+ * da ese total: invitaría a una resta que no significa nada.
+ *
+ * `pending-cancel` sí se queda, y no como "cancelada": pidieron la baja pero
+ * siguen pagando hasta que termine el ciclo, así que cuentan en «Dan acceso» y
+ * sin ellas ese total no cuadraría con nada de lo que se ve.
  */
 const ESTADO_WOO_ORDEN = [
   "active",
   "pending-cancel",
   "on-hold",
   "scheduled",
-  "cancelled",
   "expired",
 ] as const;
 
 const ESTADO_WOO_LABEL: Record<string, string> = {
   active: "Activas",
-  "pending-cancel": "Canceladas, con acceso hasta fin de ciclo",
+  "pending-cancel": "Con baja pedida, acceso hasta fin de ciclo",
   "on-hold": "En espera",
   scheduled: "Programadas",
-  cancelled: "Canceladas",
   expired: "Vencidas",
 };
 
@@ -221,17 +226,6 @@ export default function ResumenPage() {
   const wooCaido = susc !== null && susc.woocommerce.ok !== true;
   const activosLive = susc?.alumnos.activos ?? null;
 
-  /**
-   * Descuadres con dato Y distintos de cero. `null` es "no se sabe" (Woo caído),
-   * no "cero descuadres": mostrarlo como 0 diría que está todo cuadrado
-   * justamente cuando no se pudo comprobar.
-   */
-  const descuadres = susc?.descuadres;
-  const hayDescuadre =
-    (descuadres?.suscripciones_activas_sin_alumno ?? 0) > 0 ||
-    (descuadres?.suscripciones_activas_sin_email ?? 0) > 0 ||
-    (descuadres?.alumnos_sin_email ?? 0) > 0;
-
   const motivoSinMargenReal: string | null = !serieProfes
     ? "Sin respuesta de DRC Gestión: no hay margen real que mostrar. El resto de la página lee del Sheet y no se ve afectado."
     : !mesEnProfesores
@@ -269,25 +263,6 @@ export default function ResumenPage() {
   );
   const churn = getValueAtMonth(kpi, "clientes_churn", activeMonth);
   const churnObj = getValueAtMonth(kpi, "churn_obj", activeMonth);
-
-  /**
-   * Sheet vs. en vivo. Los dos números cuentan COSAS DISTINTAS (suscripciones el
-   * del Sheet, personas el de DRC Gestión), así que la aclaración de qué mide
-   * cada uno va SIEMPRE. Esto de acá sólo decide si además se destaca el hueco:
-   * por encima del 15% ya no se explica por el desfase normal de un cierre
-   * mensual, y quien mire las dos tarjetas sin leer el pie va a sacar una
-   * conclusión equivocada.
-   *
-   * Se compara contra el mayor de los dos (no contra el del Sheet) para que la
-   * brecha no dependa de cuál se ponga de referencia.
-   */
-  const BRECHA_NOTABLE = 0.15;
-  const brechaEsNotable =
-    activosLive !== null &&
-    suscActivas !== null &&
-    Math.max(activosLive, suscActivas) > 0 &&
-    Math.abs(activosLive - suscActivas) / Math.max(activosLive, suscActivas) >
-      BRECHA_NOTABLE;
 
   // ---- Fila 4 ----
   const arpc = getValueAtMonth(kpi, "ARPC", activeMonth);
@@ -737,15 +712,6 @@ export default function ResumenPage() {
                   activación manual no tiene ninguna.
                 </p>
 
-                {brechaEsNotable && (
-                  <Aviso titulo="Los dos números se separan bastante">
-                    La diferencia pasa del {Math.round(BRECHA_NOTABLE * 100)}%, que
-                    ya no se explica sólo por el desfase de un cierre mensual.
-                    Vale la pena revisar si el Sheet está al día y si el criterio
-                    de «activo» de cada lado sigue siendo el que se quiere.
-                  </Aviso>
-                )}
-
                 {/* Las dos columnas van en `flex flex-col` + `flex-1` y no en
                     un div a secas: EmptyState se estira con `h-full`, y dentro
                     de una celda de grid con un título encima eso da el 100% de
@@ -857,60 +823,19 @@ export default function ResumenPage() {
                             </dd>
                           </div>
                         </dl>
+                        {/* Sin el total de WooCommerce a propósito: las bajas
+                            consumadas no se listan, así que un total invitaría a
+                            restar y sacar un número que no está a la vista. */}
                         <p className="mt-3 text-[11px] text-drc-ink-soft">
-                          Cuenta SUSCRIPCIONES, no personas.{" "}
-                          {formatNumber(susc.woocommerce.total)} en total.
-                          «Dan acceso» son las activas más las canceladas que
-                          siguen dentro de su ciclo pagado.
+                          Cuenta SUSCRIPCIONES, no personas. «Dan acceso» son las
+                          activas más las que pidieron la baja y siguen dentro de
+                          su ciclo pagado.
                         </p>
                       </>
                     )}
                     </div>
                   </div>
                 </div>
-
-                {/* Descuadres: no rompen nada, pero son gente pagando que el
-                    sistema no conoce (o al revés). Se avisa sólo de los que
-                    tienen dato y son > 0; un null es "no se pudo comprobar", que
-                    no es lo mismo que "está cuadrado". */}
-                {hayDescuadre && descuadres && (
-                  <Aviso titulo="Descuadres entre WooCommerce y el sistema">
-                    hay altas que no cuadran entre las dos puntas:
-                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                      {(descuadres.suscripciones_activas_sin_alumno ?? 0) > 0 && (
-                        <li>
-                          <strong>
-                            {formatNumber(
-                              descuadres.suscripciones_activas_sin_alumno
-                            )}
-                          </strong>{" "}
-                          suscripciones con acceso no corresponden a ningún alumno
-                          dado de alta: están pagando y no existen en el sistema.
-                        </li>
-                      )}
-                      {(descuadres.suscripciones_activas_sin_email ?? 0) > 0 && (
-                        <li>
-                          <strong>
-                            {formatNumber(
-                              descuadres.suscripciones_activas_sin_email
-                            )}
-                          </strong>{" "}
-                          suscripciones con acceso llegan sin email, así que no hay
-                          forma de cruzarlas con nadie.
-                        </li>
-                      )}
-                      {descuadres.alumnos_sin_email > 0 && (
-                        <li>
-                          <strong>
-                            {formatNumber(descuadres.alumnos_sin_email)}
-                          </strong>{" "}
-                          alumnos del sistema no tienen email cargado: nunca podrán
-                          contarse por su suscripción.
-                        </li>
-                      )}
-                    </ul>
-                  </Aviso>
-                )}
 
                 <p className="text-[11px] text-drc-ink-soft">
                   Recuento del {susc.today_madrid} (hora de España).
