@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useLiveData } from "@/hooks/useLiveData";
 import { useMesActivo } from "@/hooks/useMesActivo";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -11,6 +11,7 @@ import { ParcialBadge } from "@/components/ui/ParcialBadge";
 import { Panel } from "@/components/ui/Panel";
 import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
+import { DonutChart } from "@/components/ui/DonutChart";
 import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -48,6 +49,7 @@ import {
 import { CAT, GASTO, INGRESO, NEUTRO } from "@/lib/chartColors";
 import type { DBKpiData } from "@/types/kpi";
 import type { PayoutsMonth, PayoutsSummary } from "@/types/profesores";
+import type { SubscriptionsSnapshot } from "@/types/suscripciones";
 
 /**
  * Pie de las tarjetas con umbral fijo: objetivo arriba, límite debajo. El
@@ -68,6 +70,45 @@ function ObjetivoLimite({
     </>
   );
 }
+
+/**
+ * Aviso amarillo de "ojo con esto": el dato no está mal, hay algo que mirar.
+ * Mismo tono y misma caja que el aviso de cifra parcial de Profesores, para que
+ * un aviso se reconozca como aviso en todo el dashboard.
+ */
+function Aviso({ titulo, children }: { titulo: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-drc-yellow/40 bg-drc-yellow/10 px-4 py-2.5 text-xs text-drc-ink">
+      <strong>{titulo}</strong> — {children}
+    </div>
+  );
+}
+
+/**
+ * Estados de suscripción de WooCommerce, en el orden en que se leen: primero los
+ * que DAN ACCESO (y por tanto facturan), después los que no.
+ *
+ * `pending-cancel` es el que más se mira de todos: ya cancelaron pero siguen
+ * pagando hasta que termine el ciclo, así que es churn que todavía no se ve en
+ * ninguna otra parte del dashboard.
+ */
+const ESTADO_WOO_ORDEN = [
+  "active",
+  "pending-cancel",
+  "on-hold",
+  "scheduled",
+  "cancelled",
+  "expired",
+] as const;
+
+const ESTADO_WOO_LABEL: Record<string, string> = {
+  active: "Activas",
+  "pending-cancel": "Canceladas, con acceso hasta fin de ciclo",
+  "on-hold": "En espera",
+  scheduled: "Programadas",
+  cancelled: "Canceladas",
+  expired: "Vencidas",
+};
 
 export default function ResumenPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
@@ -156,6 +197,41 @@ export default function ResumenPage() {
    * uno es de configuración nuestra, otro es del calendario, otro es que falta
    * cargar precios del otro lado y el último es que todavía no contestó.
    */
+  /**
+   * SUSCRIPCIONES Y ALUMNOS ACTIVOS — la otra cosa que no sale del Sheet.
+   *
+   * `/api/subscriptions` no lleva parámetros porque el recuento es una FOTO DEL
+   * PRESENTE: el endpoint no sabe cuántos activos había en marzo. Por eso este
+   * bloque NO depende del desplegable de mes y no se grafica en el tiempo —
+   * igual que "Profesores activos ahora". La serie histórica sigue siendo la del
+   * Sheet.
+   */
+  const {
+    data: susc,
+    loading: suscLoading,
+    error: suscError,
+  } = useLiveData<SubscriptionsSnapshot>("/api/subscriptions", 60_000);
+
+  /**
+   * Woo caído. El otro lado NO descarta la respuesta entera por esto: lo que
+   * sale de su base (activaciones manuales y Oritalk) sigue llegando bien, y
+   * sólo se anula lo que depende de WooCommerce. La UI respeta esa distinción:
+   * "—" en lo que falta, el resto se muestra.
+   */
+  const wooCaido = susc !== null && susc.woocommerce.ok !== true;
+  const activosLive = susc?.alumnos.activos ?? null;
+
+  /**
+   * Descuadres con dato Y distintos de cero. `null` es "no se sabe" (Woo caído),
+   * no "cero descuadres": mostrarlo como 0 diría que está todo cuadrado
+   * justamente cuando no se pudo comprobar.
+   */
+  const descuadres = susc?.descuadres;
+  const hayDescuadre =
+    (descuadres?.suscripciones_activas_sin_alumno ?? 0) > 0 ||
+    (descuadres?.suscripciones_activas_sin_email ?? 0) > 0 ||
+    (descuadres?.alumnos_sin_email ?? 0) > 0;
+
   const motivoSinMargenReal: string | null = !serieProfes
     ? "Sin respuesta de DRC Gestión: no hay margen real que mostrar. El resto de la página lee del Sheet y no se ve afectado."
     : !mesEnProfesores
@@ -193,6 +269,25 @@ export default function ResumenPage() {
   );
   const churn = getValueAtMonth(kpi, "clientes_churn", activeMonth);
   const churnObj = getValueAtMonth(kpi, "churn_obj", activeMonth);
+
+  /**
+   * Sheet vs. en vivo. Los dos números cuentan COSAS DISTINTAS (suscripciones el
+   * del Sheet, personas el de DRC Gestión), así que la aclaración de qué mide
+   * cada uno va SIEMPRE. Esto de acá sólo decide si además se destaca el hueco:
+   * por encima del 15% ya no se explica por el desfase normal de un cierre
+   * mensual, y quien mire las dos tarjetas sin leer el pie va a sacar una
+   * conclusión equivocada.
+   *
+   * Se compara contra el mayor de los dos (no contra el del Sheet) para que la
+   * brecha no dependa de cuál se ponga de referencia.
+   */
+  const BRECHA_NOTABLE = 0.15;
+  const brechaEsNotable =
+    activosLive !== null &&
+    suscActivas !== null &&
+    Math.max(activosLive, suscActivas) > 0 &&
+    Math.abs(activosLive - suscActivas) / Math.max(activosLive, suscActivas) >
+      BRECHA_NOTABLE;
 
   // ---- Fila 4 ----
   const arpc = getValueAtMonth(kpi, "ARPC", activeMonth);
@@ -385,9 +480,13 @@ export default function ResumenPage() {
                 },
               ]}
             />
+            {/* "(Sheet)" en el título por lo mismo que en margen bruto: más
+                abajo hay un recuento EN VIVO de alumnos activos, y sin decir de
+                dónde sale cada uno los dos números se leen como si uno
+                corrigiera al otro. */}
             <KpiCard
               className="lg:col-span-2"
-              label="Suscripciones activas"
+              label="Suscripciones activas (Sheet)"
               value={formatNumber(suscActivas)}
               mom={getMoMAtMonth(kpi, "suscripciones_activas", activeMonth)}
               subValues={[
@@ -563,6 +662,265 @@ export default function ResumenPage() {
               }
             />
           </div>
+
+          {/* --- Alumnos activos AHORA (DRC Gestión, no el Sheet) ---
+              Va pegado a las tarjetas KPI y no al final de la página: es el
+              contrapunto en vivo del "Suscripciones activas" de la fila 3, y
+              separarlos con tres gráficos en medio sería esconder justo la
+              comparación que da sentido a la sección. */}
+          <Panel
+            title="Alumnos activos ahora · WooCommerce + reglas de DRC Gestión"
+            description="Foto del PRESENTE, no del mes elegido arriba: el recuento se hace hoy y no cambia con el desplegable. Un alumno cuenta como activo si tiene suscripción de WooCommerce vigente, activación manual en curso o es de Oritalk — la misma regla que decide si puede entrar a clase."
+          >
+            {suscLoading && !susc && (
+              <div className="text-sm text-drc-ink-soft">
+                Cargando suscripciones…
+              </div>
+            )}
+
+            {/* Degradación total: mismo EmptyState que el resto del dashboard.
+                El motivo real (401/500/timeout) queda en los logs del servidor. */}
+            {!suscLoading && !susc && (
+              <EmptyState label="Sin datos de suscripciones: DRC Gestión no respondió" />
+            )}
+
+            {susc && (
+              <div className="space-y-4">
+                {/* Woo caído NO vacía la sección: las activaciones manuales y
+                    Oritalk salen de la base del otro lado y siguen siendo
+                    válidas. Sólo se cae lo que depende de WooCommerce. */}
+                {wooCaido && (
+                  <Aviso titulo="Sin conexión con WooCommerce">
+                    DRC Gestión no pudo leer las suscripciones
+                    {susc.woocommerce.error ? ` (${susc.woocommerce.error})` : ""}
+                    , así que el total de activos y los que entran por suscripción
+                    quedan en «—». Los activados a mano y los de Oritalk sí se
+                    muestran: salen de su base y no dependen de WooCommerce. No
+                    son ceros, es un dato que falta.
+                  </Aviso>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <KpiCard
+                    label="Alumnos activos ahora (DRC Gestión)"
+                    value={formatNumber(activosLive)}
+                    subValues={[
+                      {
+                        label: "Alumnos en el sistema",
+                        value: formatNumber(susc.alumnos.en_base),
+                      },
+                      {
+                        label: "Inactivos",
+                        value: formatNumber(susc.alumnos.inactivos),
+                      },
+                    ]}
+                    hint="Cuenta PERSONAS con acceso hoy, por cualquiera de los tres orígenes. Es el mismo número que decide quién puede entrar a clase."
+                  />
+                  <KpiCard
+                    label={`Suscripciones activas${
+                      activeMonth ? ` · ${activeMonth}` : ""
+                    } (Sheet)`}
+                    value={formatNumber(suscActivas)}
+                    hint="Columna suscripciones_activas de DB_KPI, del mes elegido arriba. Cuenta SUSCRIPCIONES de un mes cerrado, no personas de hoy."
+                  />
+                </div>
+
+                {/* La aclaración va siempre: los dos números miden cosas
+                    distintas aunque coincidan, y una coincidencia casual sería
+                    aún más engañosa que una diferencia. */}
+                <p className="text-[11px] text-drc-ink-soft">
+                  No son el mismo dato y no tienen por qué coincidir: el de la
+                  izquierda son <strong>personas con acceso hoy</strong> (en vivo,
+                  incluye manuales y Oritalk); el de la derecha son{" "}
+                  <strong>suscripciones del mes cerrado</strong> que cargamos en el
+                  Sheet. Una persona puede tener más de una suscripción, y una
+                  activación manual no tiene ninguna.
+                </p>
+
+                {brechaEsNotable && (
+                  <Aviso titulo="Los dos números se separan bastante">
+                    La diferencia pasa del {Math.round(BRECHA_NOTABLE * 100)}%, que
+                    ya no se explica sólo por el desfase de un cierre mensual.
+                    Vale la pena revisar si el Sheet está al día y si el criterio
+                    de «activo» de cada lado sigue siendo el que se quiere.
+                  </Aviso>
+                )}
+
+                {/* Las dos columnas van en `flex flex-col` + `flex-1` y no en
+                    un div a secas: EmptyState se estira con `h-full`, y dentro
+                    de una celda de grid con un título encima eso da el 100% de
+                    la FILA, no del hueco que queda bajo el título — se desborda
+                    justo lo que mide el título y se come el aviso de abajo. */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="flex flex-col">
+                    <h4 className="text-xs uppercase tracking-wide text-drc-ink-soft mb-3">
+                      Por dónde entra el acceso
+                    </h4>
+                    {/* Con Woo caído no se dibuja: el trozo de "suscripción"
+                        vendría en null y la dona pintaría manual+Oritalk como si
+                        fueran el total de activos, que es justo la lectura
+                        equivocada. Las tres categorías son excluyentes y suman
+                        `activos`, por eso el centro de la dona es ese total. */}
+                    <div className="flex-1">
+                    {activosLive === null ? (
+                      <EmptyState label="Sin WooCommerce no se puede repartir el total" />
+                    ) : (
+                      <>
+                        <DonutChart
+                          height={200}
+                          centerLabel="activos"
+                          valueFormatter={(v) => formatNumber(v)}
+                          data={[
+                            {
+                              name: "Suscripción de WooCommerce",
+                              value: susc.alumnos.por_origen.suscripcion,
+                              color: CAT.verde,
+                            },
+                            {
+                              name: "Activación manual",
+                              value: susc.alumnos.por_origen.manual.total,
+                              color: CAT.oro,
+                            },
+                            {
+                              name: "Oritalk",
+                              value: susc.alumnos.por_origen.oritalk,
+                              color: CAT.verdeClaro,
+                            },
+                          ]}
+                        />
+                        {susc.alumnos.por_origen.manual.total > 0 && (
+                          <p className="mt-3 text-[11px] text-drc-ink-soft">
+                            De los{" "}
+                            {formatNumber(susc.alumnos.por_origen.manual.total)}{" "}
+                            manuales,{" "}
+                            {formatNumber(
+                              susc.alumnos.por_origen.manual.plan_empresa
+                            )}{" "}
+                            son plan de empresa (la fecha la calcula el sistema) y{" "}
+                            {formatNumber(susc.alumnos.por_origen.manual.a_mano)}{" "}
+                            activaciones puestas a mano.
+                          </p>
+                        )}
+                      </>
+                    )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col">
+                    <h4 className="text-xs uppercase tracking-wide text-drc-ink-soft mb-3">
+                      Suscripciones en WooCommerce
+                    </h4>
+                    <div className="flex-1">
+                    {wooCaido ? (
+                      <EmptyState label="WooCommerce no respondió" />
+                    ) : (
+                      <>
+                        <dl className="divide-y divide-drc-line/60 text-xs">
+                          {ESTADO_WOO_ORDEN.filter(
+                            (e) => susc.woocommerce.por_estado[e] !== undefined
+                          ).map((estado) => (
+                            <div
+                              key={estado}
+                              className="flex items-baseline justify-between gap-4 py-1.5"
+                            >
+                              <dt className="text-drc-ink-soft">
+                                {ESTADO_WOO_LABEL[estado]}
+                              </dt>
+                              <dd className="tabular font-medium text-drc-ink">
+                                {formatNumber(susc.woocommerce.por_estado[estado])}
+                              </dd>
+                            </div>
+                          ))}
+                          {/* Estados que el otro lado no mapea. Se muestran
+                              crudos y en gris: inventarles una traducción sería
+                              afirmar que sabemos qué significan. */}
+                          {Object.entries(susc.woocommerce.otros_estados).map(
+                            ([estado, n]) => (
+                              <div
+                                key={estado}
+                                className="flex items-baseline justify-between gap-4 py-1.5"
+                              >
+                                <dt className="text-drc-ink-soft">
+                                  {estado}{" "}
+                                  <span className="opacity-70">(sin mapear)</span>
+                                </dt>
+                                <dd className="tabular font-medium text-drc-ink-soft">
+                                  {formatNumber(n)}
+                                </dd>
+                              </div>
+                            )
+                          )}
+                          <div className="flex items-baseline justify-between gap-4 border-t-2 border-drc-line pt-2 font-semibold text-drc-ink">
+                            <dt>Dan acceso</dt>
+                            <dd className="tabular">
+                              {formatNumber(susc.woocommerce.dan_acceso)}
+                            </dd>
+                          </div>
+                        </dl>
+                        <p className="mt-3 text-[11px] text-drc-ink-soft">
+                          Cuenta SUSCRIPCIONES, no personas.{" "}
+                          {formatNumber(susc.woocommerce.total)} en total.
+                          «Dan acceso» son las activas más las canceladas que
+                          siguen dentro de su ciclo pagado.
+                        </p>
+                      </>
+                    )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Descuadres: no rompen nada, pero son gente pagando que el
+                    sistema no conoce (o al revés). Se avisa sólo de los que
+                    tienen dato y son > 0; un null es "no se pudo comprobar", que
+                    no es lo mismo que "está cuadrado". */}
+                {hayDescuadre && descuadres && (
+                  <Aviso titulo="Descuadres entre WooCommerce y el sistema">
+                    hay altas que no cuadran entre las dos puntas:
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      {(descuadres.suscripciones_activas_sin_alumno ?? 0) > 0 && (
+                        <li>
+                          <strong>
+                            {formatNumber(
+                              descuadres.suscripciones_activas_sin_alumno
+                            )}
+                          </strong>{" "}
+                          suscripciones con acceso no corresponden a ningún alumno
+                          dado de alta: están pagando y no existen en el sistema.
+                        </li>
+                      )}
+                      {(descuadres.suscripciones_activas_sin_email ?? 0) > 0 && (
+                        <li>
+                          <strong>
+                            {formatNumber(
+                              descuadres.suscripciones_activas_sin_email
+                            )}
+                          </strong>{" "}
+                          suscripciones con acceso llegan sin email, así que no hay
+                          forma de cruzarlas con nadie.
+                        </li>
+                      )}
+                      {descuadres.alumnos_sin_email > 0 && (
+                        <li>
+                          <strong>
+                            {formatNumber(descuadres.alumnos_sin_email)}
+                          </strong>{" "}
+                          alumnos del sistema no tienen email cargado: nunca podrán
+                          contarse por su suscripción.
+                        </li>
+                      )}
+                    </ul>
+                  </Aviso>
+                )}
+
+                <p className="text-[11px] text-drc-ink-soft">
+                  Recuento del {susc.today_madrid} (hora de España).
+                  {suscError
+                    ? " No se pudo contactar con DRC Gestión: los números de arriba son los últimos que llegaron."
+                    : ""}
+                </p>
+              </div>
+            )}
+          </Panel>
 
           {/* Dos datos y nada más: dónde invertir y qué se está vendiendo. Los
               ROI por canal que antes vivían acá están completos en Captación.
