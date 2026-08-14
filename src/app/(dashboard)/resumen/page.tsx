@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { MonthSelect } from "@/components/ui/MonthSelect";
 import { KpiCard } from "@/components/ui/KpiCard";
+import { ParcialBadge } from "@/components/ui/ParcialBadge";
 import { Panel } from "@/components/ui/Panel";
 import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
@@ -25,6 +26,7 @@ import {
   CR_LIMITE,
   CHURN_OBJETIVO,
   CHURN_LIMITE,
+  monthLabelToApiMonth,
   formatCurrency,
   formatCurrencyDelta,
   formatNumber,
@@ -33,6 +35,11 @@ import {
   formatPointsDelta,
 } from "@/lib/kpiHelpers";
 import {
+  avisoParcialMes,
+  facturacionTotalDe,
+  margenTotalDe,
+} from "@/lib/profesoresHelpers";
+import {
   getBlock,
   rankAtMonth,
   EMPTY_PRODUCTO_KPI,
@@ -40,6 +47,7 @@ import {
 } from "@/lib/productoKpiHelpers";
 import { CAT, GASTO, INGRESO, NEUTRO } from "@/lib/chartColors";
 import type { DBKpiData } from "@/types/kpi";
+import type { PayoutsMonth, PayoutsSummary } from "@/types/profesores";
 
 /**
  * Pie de las tarjetas con umbral fijo: objetivo arriba, límite debajo. El
@@ -82,6 +90,83 @@ export default function ResumenPage() {
   const [ingRange, setIngRange] = useState(0);
   const [pedRange, setPedRange] = useState(0);
   const [cliRange, setCliRange] = useState(0);
+
+  /**
+   * MARGEN BRUTO REAL — la única cosa de esta página que NO sale del Sheet.
+   *
+   * Viene del mismo endpoint que la página Profesores (`margen_total` de
+   * /api/profesores?month=YYYY-MM): facturación real de los alumnos vía
+   * WooCommerce menos lo que se le paga a los profesores.
+   *
+   * Los dos formatos de mes NO son el mismo: el desplegable de arriba habla el
+   * "mmm-yy" del Sheet y el endpoint espera "YYYY-MM". El puente es
+   * monthLabelToApiMonth, el mismo que ya usa el desplegable de Profesores para
+   * el camino de vuelta; acá no se escribe ninguna conversión nueva.
+   *
+   * La serie (/api/profesores/summary) se pide sólo para saber QUÉ MESES cubre
+   * DRC Gestión. Sin ella se le pediría el mes a ciegas: el Sheet arranca mucho
+   * antes que las liquidaciones, así que la mayoría de los meses del desplegable
+   * no tienen nada del otro lado y no vale la pena hacerle recalcular 27
+   * profesores para que conteste ceros. Es la misma llamada que ya hace la
+   * página Profesores, y el cache del servidor es compartido: sale gratis.
+   */
+  const mesApi = activeMonth ? monthLabelToApiMonth(activeMonth) : null;
+  const { data: serieProfes } = useLiveData<PayoutsSummary>(
+    "/api/profesores/summary",
+    60_000
+  );
+  const mesEnProfesores =
+    mesApi !== null &&
+    (serieProfes?.series ?? []).some((p) => p.month_year === mesApi);
+
+  // Con url null, useLiveData no pide nada (ni la primera vez ni en el polling).
+  const { data: profesRaw } = useLiveData<PayoutsMonth>(
+    mesEnProfesores ? `/api/profesores?month=${mesApi}` : null,
+    60_000
+  );
+
+  /**
+   * El hook conserva el último `data` que llegó, así que al cambiar de mes (o al
+   * dejar de pedir, porque el mes nuevo no existe del otro lado) el payload
+   * viejo sigue ahí un rato. `month_year` dice a qué mes corresponde de verdad:
+   * si no es el que se está mirando, no es el dato de este mes y se descarta.
+   * Sin este guardia la tarjeta enseñaría el margen de julio bajo el título de
+   * agosto, que es peor que no enseñar nada.
+   */
+  const profesMes =
+    profesRaw && profesRaw.month_year === mesApi ? profesRaw : null;
+
+  // margen_total y facturacion_total SIEMPRE por los helpers: cuando ningún
+  // alumno tiene precio resuelto el endpoint manda 0, y ese 0 significa "no lo
+  // sabemos" (ver lib/profesoresHelpers).
+  const margenReal = profesMes ? margenTotalDe(profesMes) : null;
+  const facturacionReal = profesMes ? facturacionTotalDe(profesMes) : null;
+  const avisoReal = profesMes ? avisoParcialMes(profesMes) : null;
+  // Margen sobre la facturación que pasa por profesores. Es lo ÚNICO que se
+  // deriva acá, y sólo con datos del propio endpoint: sirve para leer la
+  // tarjeta de al lado —que está en %— sin tener que dividir a ojo.
+  const margenRealPct =
+    margenReal !== null && facturacionReal !== null && facturacionReal !== 0
+      ? margenReal / facturacionReal
+      : null;
+
+  /**
+   * POR QUÉ no hay margen real, o null si sí lo hay. Los cuatro motivos se
+   * arreglan de forma distinta y no se pueden fundir en un "sin datos" genérico:
+   * uno es de configuración nuestra, otro es del calendario, otro es que falta
+   * cargar precios del otro lado y el último es que todavía no contestó.
+   */
+  const motivoSinMargenReal: string | null = !serieProfes
+    ? "Sin respuesta de DRC Gestión: no hay margen real que mostrar. El resto de la página lee del Sheet y no se ve afectado."
+    : !mesEnProfesores
+      ? `El histórico de liquidaciones de DRC Gestión no llega a ${
+          activeMonth || "este mes"
+        }. No es 0 €: es un mes sin datos del otro lado.`
+      : !profesMes
+        ? "Pidiéndole el mes a DRC Gestión…"
+        : margenReal === null
+          ? "Ningún alumno con precio de plan resuelto en DRC Gestión este mes, así que no hay margen que calcular. No es 0 €: es un dato que falta."
+          : null;
 
   // ---- Fila 1 · Ingresos ----
   const ingresos = getValueAtMonth(kpi, "ingresos_netos", activeMonth);
@@ -338,8 +423,11 @@ export default function ResumenPage() {
             />
           </div>
 
-          {/* --- Fila 4 · Unit economics y margen bruto --- */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {/* --- Fila 4 · Unit economics ---
+              El margen bruto salió de esta fila y tiene la suya: ahora son dos
+              tarjetas que se leen juntas (Sheet y real), y como una tercera
+              parte de una fila de seis no se comparan, se comparten. */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {/* ARPC abre la fila: es el ingreso por cliente del que sale el LTV.
                 DB_KPI no trae columna de objetivo para ARPC, así que va sin
                 alerta ni hint (mismo criterio que en Retención). */}
@@ -394,12 +482,20 @@ export default function ResumenPage() {
                 />
               }
             />
+          </div>
+
+          {/* --- Fila 5 · Margen bruto: el del Sheet y el real ---
+              Las dos tarjetas miden lo mismo (lo que queda después del coste de
+              dar el servicio) pero NO son la misma cifra ni salen de la misma
+              fuente, así que van etiquetadas por origen y no se restan ni se
+              comparan por código: se ponen al lado y las lee quien mira. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Margen bruto contra su objetivo del Sheet (MB_obj), mismo patrón
                 que LTV: alerta por ratio real/objetivo y el objetivo en el pie.
                 La comparativa va en PUNTOS porcentuales, no en % relativo — es
                 un margen, igual que en Situación Financiera. */}
             <KpiCard
-              label="Margen bruto"
+              label="Margen bruto (Sheet)"
               value={formatPercent(margenBruto)}
               momDelta={(() => {
                 const d = getDeltaAtMonth(kpi, "%margenbruto", activeMonth);
@@ -407,7 +503,64 @@ export default function ResumenPage() {
               })()}
               formatDelta={formatPointsDelta}
               alerta={getAlertaObjetivo(margenBruto, mbObj, false)}
-              hint={mbObj !== null ? `Objetivo: ${formatPercent(mbObj)}` : undefined}
+              hint={
+                <>
+                  <div>
+                    Columna %margenbruto del cuadro de resultados de DB_KPI, con
+                    todos los costes del servicio dentro.
+                  </div>
+                  {mbObj !== null && <div>Objetivo: {formatPercent(mbObj)}</div>}
+                </>
+              }
+            />
+
+            {/*
+              MARGEN BRUTO REAL — mismo mes, otra fuente (DRC Gestión).
+
+              Sin `alerta` y con `semaforo` explícito, igual que la tarjeta
+              "Margen total" de la página Profesores: acá no hay objetivo que
+              cumplir, lo único que significa algo es el signo, y ése lo pone la
+              propia resta.
+
+              El ⚠ va en `action` (el sitio del chip de alerta, que esta tarjeta
+              no usa) con el MISMO badge y el mismo criterio que la tabla de
+              Profesores: la cifra es un mínimo, no un cierre.
+            */}
+            <KpiCard
+              label="Margen bruto real (profesores)"
+              value={formatCurrency(margenReal)}
+              semaforo={
+                margenReal === null ? "neutral" : margenReal >= 0 ? "green" : "red"
+              }
+              action={avisoReal ? <ParcialBadge aviso={avisoReal} /> : undefined}
+              subValues={[
+                {
+                  label: "Facturación vía profesores",
+                  value: formatCurrency(facturacionReal),
+                },
+                {
+                  label: "Margen / facturación",
+                  value: formatPercent(margenRealPct),
+                },
+              ]}
+              hint={
+                motivoSinMargenReal ? (
+                  <div>{motivoSinMargenReal}</div>
+                ) : (
+                  <>
+                    <div>
+                      Facturación real de los alumnos (WooCommerce) − lo que se
+                      paga a sus profesores, calculado por DRC Gestión. Es el
+                      mismo número de la tarjeta «Margen total» de Profesores.
+                    </div>
+                    <div>
+                      Cubre sólo lo que pasa por un profesor con alumnos
+                      asignados: no es la cuenta entera de la academia, así que su
+                      % no se lee contra el objetivo MB_obj de al lado.
+                    </div>
+                  </>
+                )
+              }
             />
           </div>
 

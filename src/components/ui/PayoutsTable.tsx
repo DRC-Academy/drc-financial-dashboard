@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { EmptyState } from "./EmptyState";
+import { ParcialBadge } from "./ParcialBadge";
 import { formatCurrency, formatNumber } from "@/lib/kpiHelpers";
 import {
   avisoParcialDe,
@@ -91,27 +92,6 @@ function EstadoBadge({ status }: { status: PayoutStatus }) {
       )}
     >
       {conocido ? ESTADO_LABEL[status] : status}
-    </span>
-  );
-}
-
-/**
- * Aviso de facturación incompleta, pegado al nombre del profesor. Amarillo de
- * "ojo con este número", no rojo de error: el dato no está mal, está a medias.
- *
- * El texto va en `title` (tooltip nativo) y en `aria-label`, y además queda
- * escrito en la fila como texto oculto para que un lector de pantalla no
- * dependa del hover. El ⚠ es aria-hidden para no leerlo dos veces.
- */
-function ParcialBadge({ aviso }: { aviso: string }) {
-  return (
-    <span
-      title={aviso}
-      aria-label={aviso}
-      role="img"
-      className="ml-1.5 inline-flex items-center rounded-full bg-drc-yellow/25 px-1 py-0.5 text-[10px] leading-none text-drc-yellow-deep align-middle cursor-help"
-    >
-      <span aria-hidden>⚠</span>
     </span>
   );
 }

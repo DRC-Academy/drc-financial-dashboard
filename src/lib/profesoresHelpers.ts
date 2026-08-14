@@ -69,6 +69,24 @@ export function margenTotalDe(mes: PayoutsMonth): MetricValue {
 }
 
 /**
+ * Aviso de dato incompleto para el MES entero, o null si no hay nada que
+ * avisar. Es la versión agregada de avisoParcialDe: mismo criterio, misma
+ * lectura ("es un mínimo, el real es igual o mayor"), pero del mes completo.
+ *
+ * Lo usa el ⚠ de la tarjeta "Margen bruto real" de Resumen Ejecutivo, donde no
+ * hay tabla debajo que dé el detalle por profesor: el aviso tiene que decir por
+ * sí solo qué le falta al número y dónde se ve el desglose.
+ */
+export function avisoParcialMes(mes: PayoutsMonth): string | null {
+  if (mes.facturacion_parcial !== true) return null;
+  return (
+    "Cifra parcial: algunos alumnos no tienen precio de plan resuelto en DRC " +
+    "Gestión, así que este margen es un MÍNIMO — el real es igual o mayor, " +
+    "nunca menor. El detalle profesor por profesor está en la página Profesores."
+  );
+}
+
+/**
  * Aviso de dato incompleto para un profesor, o null si no hay nada que avisar.
  *
  * Se muestra SIEMPRE que aplique, por pocos alumnos que falten: el que mira la
