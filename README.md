@@ -256,4 +256,5 @@ como columnas nuevas (`sortKey` + celda en `PayoutsTable`), pero no se muestran
 placeholders: una columna vacía se termina leyendo como un cero.
 
 <!-- test de conexión post-transferencia: 2026-08-17 -->
+<!-- test de conexión #2, post-fix de visibilidad: 2026-08-17 -->
 
