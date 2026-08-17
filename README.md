@@ -254,3 +254,6 @@ WooCommerce por alumno, y está sin confirmar si DRC Gestión puede darlo sin
 salir a consultar la API de Woo en vivo. La tabla está preparada para recibirlas
 como columnas nuevas (`sortKey` + celda en `PayoutsTable`), pero no se muestran
 placeholders: una columna vacía se termina leyendo como un cero.
+
+<!-- test de conexión post-transferencia: 2026-08-17 -->
+
