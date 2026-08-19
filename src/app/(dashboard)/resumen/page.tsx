@@ -226,6 +226,31 @@ export default function ResumenPage() {
   const wooCaido = susc !== null && susc.woocommerce.ok !== true;
   const activosLive = susc?.alumnos.activos ?? null;
 
+  /**
+   * ACTIVOS ≠ LOS QUE HACEN MRR. Son dos métricas distintas y el endpoint las
+   * manda por separado:
+   *   · `alumnos.activos`                  → TODOS los que tienen acceso hoy.
+   *   · `por_origen.suscripcion`           → sólo los que pagan una suscripción
+   *                                          de WooCommerce, que es lo que
+   *                                          compone el MRR recurrente.
+   * El resto (manual + Oritalk) recibe clases pero no factura por Woo, así que
+   * está DENTRO del total y FUERA del MRR. Sin separarlo, cualquiera lee el
+   * total como si todo eso fuese recurrente.
+   */
+  const conSuscripcionLive = susc?.alumnos.por_origen.suscripcion ?? null;
+
+  /**
+   * Los activos que NO entran en el MRR. Se suma acá porque el otro lado no
+   * manda el total: son dos claves distintas de `por_origen`. Sobrevive a
+   * WooCommerce caído a propósito — las dos salen de la base de DRC Gestión, no
+   * de Woo, así que este número sigue siendo bueno justo cuando `activos` y
+   * `suscripcion` vienen en null.
+   */
+  const sinSuscripcionLive =
+    susc === null
+      ? null
+      : susc.alumnos.por_origen.manual.total + susc.alumnos.por_origen.oritalk;
+
   const motivoSinMargenReal: string | null = !serieProfes
     ? "Sin respuesta de DRC Gestión: no hay margen real que mostrar. El resto de la página lee del Sheet y no se ve afectado."
     : !mesEnProfesores
@@ -675,9 +700,15 @@ export default function ResumenPage() {
                   </Aviso>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Tres tarjetas y no dos: las dos primeras son el MISMO
+                    recuento en vivo a dos alturas (el total y el trozo que hace
+                    MRR), la tercera es del Sheet y de otro mes. El orden importa
+                    — total, subconjunto, y recién después el dato del Sheet —
+                    para que la relación "una está dentro de la otra" se lea
+                    antes que la comparación con el Sheet. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <KpiCard
-                    label="Alumnos activos ahora (DRC Gestión)"
+                    label="Alumnos activos (total)"
                     value={formatNumber(activosLive)}
                     subValues={[
                       {
@@ -689,7 +720,23 @@ export default function ResumenPage() {
                         value: formatNumber(susc.alumnos.inactivos),
                       },
                     ]}
-                    hint="Cuenta PERSONAS con acceso hoy, por cualquiera de los tres orígenes. Es el mismo número que decide quién puede entrar a clase."
+                    hint="Cuenta PERSONAS con acceso hoy, por cualquiera de los tres orígenes (suscripción, activación manual u Oritalk). Es el mismo número que decide quién puede entrar a clase. NO todas facturan como MRR."
+                  />
+                  {/* El sub-valor "sin suscripción" va acá y no en la tarjeta
+                      del total a propósito: es la resta que explica por qué este
+                      número es menor, y puesto al lado se lee solo. Además
+                      sobrevive a Woo caído, así que la tarjeta sigue diciendo
+                      algo aunque el valor principal quede en «—». */}
+                  <KpiCard
+                    label="Suscripciones · afectan al MRR"
+                    value={formatNumber(conSuscripcionLive)}
+                    subValues={[
+                      {
+                        label: "Activos sin suscripción",
+                        value: formatNumber(sinSuscripcionLive),
+                      },
+                    ]}
+                    hint="Alumnos con una suscripción de WooCommerce vigente: el subconjunto del total que factura de forma recurrente y compone el MRR."
                   />
                   <KpiCard
                     label={`Suscripciones activas${
@@ -700,16 +747,28 @@ export default function ResumenPage() {
                   />
                 </div>
 
-                {/* La aclaración va siempre: los dos números miden cosas
-                    distintas aunque coincidan, y una coincidencia casual sería
-                    aún más engañosa que una diferencia. */}
+                {/* La aclaración va siempre y no como tooltip: que un alumno
+                    activo no genere MRR es contraintuitivo, y nadie va a pasar
+                    el ratón por encima de un número que cree entender. */}
                 <p className="text-[11px] text-drc-ink-soft">
-                  No son el mismo dato y no tienen por qué coincidir: el de la
-                  izquierda son <strong>personas con acceso hoy</strong> (en vivo,
-                  incluye manuales y Oritalk); el de la derecha son{" "}
-                  <strong>suscripciones del mes cerrado</strong> que cargamos en el
-                  Sheet. Una persona puede tener más de una suscripción, y una
-                  activación manual no tiene ninguna.
+                  Las dos primeras salen del mismo recuento en vivo y{" "}
+                  <strong>una está dentro de la otra</strong>: las suscripciones
+                  son el trozo del total que paga por WooCommerce. Los alumnos con{" "}
+                  <strong>acceso manual (plan de empresa o alta a mano) o de
+                  Oritalk</strong>{" "}
+                  están activos y reciben clases, pero no generan MRR vía
+                  suscripción de WooCommerce: facturan por otra vía o no facturan
+                  directamente en Woo, así que no entran en el recurrente.
+                </p>
+
+                {/* La tercera mide otra cosa aunque el número se parezca, y una
+                    coincidencia casual sería aún más engañosa que una
+                    diferencia. */}
+                <p className="text-[11px] text-drc-ink-soft">
+                  La tercera no es ninguna de las dos y no tiene por qué coincidir
+                  con ellas: son <strong>suscripciones del mes cerrado</strong> que
+                  cargamos en el Sheet, no personas de hoy. Una persona puede tener
+                  más de una suscripción, y una activación manual no tiene ninguna.
                 </p>
 
                 {/* Las dos columnas van en `flex flex-col` + `flex-1` y no en
