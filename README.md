@@ -258,3 +258,77 @@ placeholders: una columna vacía se termina leyendo como un cero.
 <!-- test de conexión post-transferencia: 2026-08-17 -->
 <!-- test de conexión #2, post-fix de visibilidad: 2026-08-17 -->
 
+
+## 12. Servidor MCP de KPIs (`/api/mcp`)
+
+Expone los KPIs consolidados del negocio a un cliente MCP (Claude Code u otro)
+con **un solo tool de solo lectura**: `get_kpis_negocio`.
+
+### Conectarlo desde Claude Code
+
+```bash
+claude mcp add --transport http drc-kpis https://<dominio-del-dashboard>/api/mcp \
+  --header "Authorization: Bearer $MCP_API_TOKEN"
+```
+
+En JSON (`.mcp.json` o `~/.claude.json`) la entrada necesita `"type": "http"`
+explícito — una entrada con `url` y sin `type` se lee como servidor stdio y
+falla.
+
+### Qué devuelve
+
+Un único JSON con cuatro bloques: `adquisicion` (CAC y CPL blended y por canal,
+close rate global y por comercial, gasto en ads), `recurrente` (MRR, churn de
+clientes y de MRR, LTV, ARPC, permanencia), `ingresos` (netos del mes + variación
+MoM) y `alumnos_ahora` (activos totales y los que tienen suscripción de
+WooCommerce).
+
+Parámetro opcional `mes`, en `"ago-26"` o `"2026-08"`. Sin él, el mes más
+reciente de DB_KPI. Un mes inexistente devuelve error con la lista de los que sí
+hay, en vez de un JSON de nulls que se leería como "ese mes está vacío".
+
+Convenciones de la respuesta: importes en euros con 2 decimales, los campos
+`_pct` ya en porcentaje (20.55 = 20,55%), y **`null` = sin dato, nunca cero**.
+El array `avisos` explica qué fuente falló cuando algo viene en null.
+
+### Un solo tool, a propósito
+
+Partirlo en tools granulares (`get_cac`, `get_mrr`, …) obligaría al cliente a
+encadenar diez llamadas para responder "cómo va el negocio", que es justo la
+pregunta que se le va a hacer.
+
+### Límite de alcance: nunca datos por profesor
+
+El MCP lee de **dos fuentes y de ninguna más**: DB_KPI (Sheets) y el recuento
+agregado de `/api/external/subscriptions`. **No toca `/api/profesores` ni
+`/api/external/payouts`**, que traen `teacher_name`, facturación y margen nombre
+por nombre. Del recuento de alumnos se exponen sólo dos números agregados: el
+total de activos y los que tienen suscripción. El desglose por origen y los
+descuadres quedan fuera — es la parte que empieza a describir grupos chicos de
+personas concretas.
+
+El límite se sostiene en `src/lib/mcpKpis.ts`, que es el único módulo del que el
+handler saca datos. Si algún día hace falta un dato de payouts, la respuesta
+correcta es no ponerlo, no "reusar el lector que ya existe".
+
+### Autenticación y revocación
+
+Bearer estático contra `MCP_API_TOKEN` (ver `.env.local.example`), comparado en
+tiempo constante. **Revocar = cambiar el valor en Vercel y redesplegar.**
+
+La variable admite varios tokens separados por comas para rotar sin ventana de
+caída: se agrega el nuevo, se actualiza el cliente, y recién entonces se borra el
+viejo.
+
+No se guarda en Edge Config ni en ninguna otra store editable en vivo: hacerlo
+exigiría un token de la API de Vercel con permisos de escritura y una página de
+administración en un dashboard que **hoy no tiene login** — o sea, una credencial
+más peligrosa que la que estaría protegiendo. Cuando el dashboard tenga
+autenticación propia, migrar a un toggle en vivo es un cambio chico.
+
+### Dependencias
+
+`mcp-handler` v2 (el paquete oficial de Vercel, sucesor de
+`@vercel/mcp-adapter`), `@modelcontextprotocol/server` v2 y `zod` v4. La v2 es
+**stateless**: no necesita Redis ni almacenamiento de sesión, que es lo que la
+hace viable acá sin montar infraestructura nueva.
