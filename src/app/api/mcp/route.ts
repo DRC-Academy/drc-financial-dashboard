@@ -1,4 +1,4 @@
-import { createMcpHandler, withMcpAuth } from "mcp-handler";
+import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { isValidMcpToken } from "@/lib/mcpAuth";
 import { buildKpisNegocio } from "@/lib/mcpKpis";
@@ -106,27 +106,65 @@ const handler = createMcpHandler(
 );
 
 /**
- * Bearer estático contra MCP_API_TOKEN (ver lib/mcpAuth.ts). `required: true`
- * hace que sin token válido no se llegue a ejecutar ningún tool.
+ * AUTENTICACIÓN — bearer estático contra MCP_API_TOKEN (ver lib/mcpAuth.ts).
  *
- * No se monta `protectedResourceHandler` ni metadata OAuth a propósito: acá no
- * hay flujo OAuth que descubrir, es un token fijo que el cliente manda en una
- * cabecera. Publicar metadata de un servidor de autorización que no existe sólo
- * mandaría a los clientes a un descubrimiento que termina en 404.
+ * ═══ POR QUÉ NO SE USA `withMcpAuth` ═══
+ * `withMcpAuth` de mcp-handler sí comprueba el token, pero cuando lo rechaza
+ * responde con un challenge de OAuth:
+ *
+ *   WWW-Authenticate: Bearer resource_metadata="https://<dominio>/.well-known/oauth-protected-resource"
+ *
+ * Acá NO hay servidor OAuth ni metadata publicada —el diseño es un token fijo en
+ * una cabecera—, así que esa URL da 404. El resultado es que un cliente MCP que
+ * recibe un 401 (por token mal puesto, o directamente ausente) se va a hacer
+ * descubrimiento OAuth, choca contra el 404 y reporta un error de OAuth en vez
+ * de "tu token no sirve", que es el problema real. Se diagnostica cualquier cosa
+ * menos lo que pasa.
+ *
+ * Con la comprobación directa de acá, un token inválido devuelve 401 y se lee
+ * como lo que es. El `WWW-Authenticate` que se manda es un `Bearer` pelado, sin
+ * `resource_metadata`: anuncia que hace falta un bearer sin mandar a nadie a
+ * descubrir un flujo que no existe.
  */
-const authHandler = withMcpAuth(
-  handler,
-  async (_req, bearerToken) => {
-    if (!isValidMcpToken(bearerToken)) return undefined;
+function noAutorizado(mensaje: string): Response {
+  return new Response(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      error: { code: -32001, message: mensaje },
+      id: null,
+    }),
+    {
+      status: 401,
+      headers: {
+        "Content-Type": "application/json",
+        "WWW-Authenticate": 'Bearer realm="drc-kpis"',
+        "Cache-Control": "no-store",
+      },
+    }
+  );
+}
 
-    return {
-      // El token ya está validado; se devuelve porque AuthInfo lo exige.
-      token: bearerToken as string,
-      scopes: ["kpis:read"],
-      clientId: "drc-financial-dashboard-mcp",
-    };
-  },
-  { required: true }
-);
+/**
+ * Sin token válido no se llega a ejecutar ningún tool: la comprobación va antes
+ * de delegar en el handler.
+ */
+async function conAuth(request: Request): Promise<Response> {
+  const cabecera = request.headers.get("authorization");
+  const [esquema, valor] = cabecera?.split(" ") ?? [];
+  const bearer = esquema?.toLowerCase() === "bearer" ? valor : undefined;
 
-export { authHandler as GET, authHandler as POST };
+  if (!isValidMcpToken(bearer)) {
+    return noAutorizado("Token inválido o ausente.");
+  }
+
+  return handler(request);
+}
+
+/**
+ * DELETE va exportado además de GET y POST porque el transporte streamable HTTP
+ * lo usa para cerrar la sesión. Sin exportarlo, Next devuelve 405 y el cliente
+ * registra un error al desconectarse. `createMcpHandler` atiende cualquier
+ * método —el ruteo es cosa del framework, no suyo—, así que alcanza con
+ * exportarlo.
+ */
+export { conAuth as GET, conAuth as POST, conAuth as DELETE };

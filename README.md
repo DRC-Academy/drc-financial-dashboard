@@ -322,9 +322,9 @@ viejo.
 
 No se guarda en Edge Config ni en ninguna otra store editable en vivo: hacerlo
 exigiría un token de la API de Vercel con permisos de escritura y una página de
-administración en un dashboard que **hoy no tiene login** — o sea, una credencial
-más peligrosa que la que estaría protegiendo. Cuando el dashboard tenga
-autenticación propia, migrar a un toggle en vivo es un cambio chico.
+administración protegida sólo por el Basic Auth de `src/proxy.ts` — o sea, una
+credencial más peligrosa que la que estaría protegiendo. Migrar a un toggle en
+vivo sigue siendo un cambio chico si alguna vez hace falta.
 
 ### Dependencias
 
