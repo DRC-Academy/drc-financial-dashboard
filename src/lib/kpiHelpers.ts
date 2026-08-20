@@ -46,6 +46,32 @@ export function getMoM(kpi: DBKpiData, key: string): number | null {
  * desplegable de mes), en vez de asumir el último. Devuelve null si ese mes no
  * tiene dato para la clave. No reemplaza a getLatest: convive con él.
  */
+/**
+ * De las claves que una página necesita, cuáles NO están en DB_KPI.
+ *
+ * NO es lo mismo que un valor null, y por eso es una función aparte. Un null
+ * es "la columna existe y ese mes no tiene dato"; una clave ausente es "la
+ * columna no llegó a la hoja". En pantalla las dos se ven idénticas —un "—"—
+ * y son problemas distintos: la primera se resuelve cargando el mes, la
+ * segunda es una métrica caída para TODOS los meses.
+ *
+ * Pasa más de lo que parece. DB_KPI no es una tabla escrita a mano: es una
+ * única fórmula en A1 que transpone y FILTRA la hoja "KPI General", y ese
+ * filtro DESCARTA la fila entera de cualquier métrica cuyo cálculo dé error.
+ * Una fórmula rota río arriba —una celda pegada a mano que bloquea una
+ * arrayformula, por ejemplo— no llega acá como #N/A: llega como una columna
+ * que dejó de existir, en silencio. Sin este guardia eso se lee como “falta
+ * cargar el mes” cuando en realidad la métrica no está para ningún mes.
+ */
+export function clavesAusentes(kpi: DBKpiData, claves: string[]): string[] {
+  // kpi.keys vacío NO es "faltan todas": es que DB_KPI no se pudo leer (Sheets
+  // caído, hoja renombrada, credenciales). De eso ya avisa el EmptyState de la
+  // página, y devolver acá la lista entera lo taparía con un muro de ruido.
+  if (kpi.keys.length === 0) return [];
+  const presentes = new Set(kpi.keys);
+  return claves.filter((clave) => !presentes.has(clave));
+}
+
 export function getValueAtMonth(
   kpi: DBKpiData,
   key: string,

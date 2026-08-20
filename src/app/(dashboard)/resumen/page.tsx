@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import {
   getValueAtMonth,
   getMoMAtMonth,
+  clavesAusentes,
   getDeltaAtMonth,
   getAlertaOperativa,
   getAlertaObjetivo,
@@ -85,6 +86,53 @@ function Aviso({ titulo, children }: { titulo: string; children: ReactNode }) {
 }
 
 /**
+ * COLUMNAS DE DB_KPI DE LAS QUE DEPENDE ESTA PÁGINA.
+ *
+ * Se listan para poder avisar cuando alguna NO LLEGA a la hoja, que es
+ * distinto de que llegue vacía (ver clavesAusentes en kpiHelpers). DB_KPI se
+ * arma con un FILTER sobre "KPI General" que descarta la fila entera de
+ * cualquier métrica cuyo cálculo dé error, así que una fórmula rota río arriba
+ * borra la columna en vez de devolver #N/A — y en pantalla eso es un “—”
+ * idéntico al de un mes sin cargar.
+ *
+ * Si agregás un getValueAtMonth con una clave nueva, sumala acá. No pasa nada
+ * si te olvidás: el guardia simplemente no la cubre.
+ */
+const COLUMNAS_DB_KPI = [
+  "%margenbruto",
+  "AOV",
+  "ARPC",
+  "CAC",
+  "CAC_obj",
+  "CF_ingresos",
+  "CPL_ads",
+  "CPL_obj",
+  "CR_clientes",
+  "CR_obj",
+  "LTV",
+  "LTV_obj",
+  "MB_obj",
+  "MRR",
+  "MRR_MoM",
+  "MRR_net",
+  "churn_obj",
+  "clientes_churn",
+  "clientes_nuevos",
+  "clientes_perdidos",
+  "clientes_recurrentes",
+  "ingresos_B2B",
+  "ingresos_B2C_netos",
+  "ingresos_netos",
+  "ingresos_oritalk",
+  "pedidos",
+  "pedidos_nuevos",
+  "pedidos_recurrentes",
+  "retention_rate",
+  "suscripciones_activas",
+  "ventas",
+];
+
+/**
  * Estados de suscripción de WooCommerce que SE MUESTRAN, en el orden en que se
  * leen: primero los que dan acceso (y por tanto facturan), después los que
  * todavía pueden darlo.
@@ -127,6 +175,9 @@ export default function ResumenPage() {
   const kpi = data ?? { months: [], keys: [], data: {} };
   const months = kpi.months;
   const hasAnyData = months.length > 0;
+
+  // Columnas que la página pide y que DB_KPI no trajo. Ver COLUMNAS_DB_KPI.
+  const columnasAusentes = clavesAusentes(kpi, COLUMNAS_DB_KPI);
 
   // Desplegable de mes: controla SOLO las tarjetas KPI. Si no hay elección
   // válida, cae al mes más reciente disponible (ver useMesActivo).
@@ -403,6 +454,21 @@ export default function ResumenPage() {
 
       {hasAnyData && (
         <div className="space-y-6">
+          {/* Va ARRIBA DE TODO y no al lado de cada tarjeta: cuando una
+              columna falta, las tarjetas afectadas ya muestran “—”, y el
+              lector necesita saber que ese guion no significa “agosto todavía
+              no se cargó” antes de sacar conclusiones de la página entera. */}
+          {columnasAusentes.length > 0 && (
+            <Aviso titulo="Faltan columnas en DB_KPI">
+              La hoja no trae{" "}
+              <strong>{columnasAusentes.join(", ")}</strong>. No es que falte
+              el dato de este mes: la columna no llegó para ninguno, así que las
+              tarjetas que dependen de ella muestran «—» siempre. Suele ser una
+              fórmula rota en «KPI General» (o río arriba, en las hojas que esa
+              lee), que el FILTER de DB_KPI convierte en columna ausente en vez
+              de en error visible.
+            </Aviso>
+          )}
           {/*
             Filas 1-3 comparten una única grilla de 7 columnas para que la
             tarjeta titular (T, span 3) quede alineada a lo ancho en las tres:
