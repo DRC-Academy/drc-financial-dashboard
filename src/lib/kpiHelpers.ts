@@ -573,6 +573,45 @@ export function monthLabelToApiMonth(label: string): string | null {
   return `20${m[2]}-${String(mes + 1).padStart(2, "0")}`;
 }
 
+/**
+ * MES EN CURSO en "YYYY-MM", hora de España.
+ *
+ * Es la zona en la que se decide qué mes es "el actual" para el negocio (la
+ * misma que usa currentMonthMadrid en lib/externalPayouts, del lado del
+ * servidor): calculado en UTC, durante las primeras horas del día 1 el mes se
+ * corre y el aviso de "este mes todavía se está registrando" saldría sobre el
+ * mes equivocado.
+ *
+ * Se reimplementa acá en vez de importar currentMonthMadrid porque aquel vive
+ * junto al cliente HTTP de DRC Gestión y esto lo consumen componentes de
+ * cliente, que no tienen por qué arrastrar ese módulo.
+ */
+export function mesEnCursoApi(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const anio = parts.find((p) => p.type === "year")?.value ?? "";
+  const mes = parts.find((p) => p.type === "month")?.value ?? "";
+  return `${anio}-${mes}`;
+}
+
+/**
+ * ¿La etiqueta "mmm-yy" del desplegable es el mes que está corriendo?
+ *
+ * Sirve para avisar de meses TODAVÍA ABIERTOS. Las columnas de DB_KPI se cargan
+ * a mano a medida que pasan las cosas, así que el mes en curso no es un mes
+ * flojo: es un mes a medio registrar, y un número bajo ahí no se lee como una
+ * caída. Con una etiqueta que no sea "mmm-yy" devuelve false: preferimos no
+ * avisar antes que avisar sobre un mes que no supimos interpretar.
+ */
+export function esMesEnCurso(label: string | null | undefined): boolean {
+  if (!label) return false;
+  const api = monthLabelToApiMonth(label);
+  return api !== null && api === mesEnCursoApi();
+}
+
 /** "2026-07" → "jul-26", para etiquetar los ejes con el mismo formato que el resto. */
 export function apiMonthToLabel(month: string): string {
   if (!isApiMonth(month)) return month;

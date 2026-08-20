@@ -12,12 +12,14 @@ import { Panel } from "@/components/ui/Panel";
 import { MultiTrendChart } from "@/components/ui/MultiTrendChart";
 import { ComposedBarLineChart } from "@/components/ui/ComposedBarLineChart";
 import { DonutChart } from "@/components/ui/DonutChart";
+import { BarComparison } from "@/components/ui/BarComparison";
 import { RangeFilter, applyRange } from "@/components/ui/RangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   getValueAtMonth,
   getMoMAtMonth,
   clavesAusentes,
+  esMesEnCurso,
   getDeltaAtMonth,
   getAlertaOperativa,
   getAlertaObjetivo,
@@ -187,6 +189,7 @@ export default function ResumenPage() {
   const [ingRange, setIngRange] = useState(0);
   const [pedRange, setPedRange] = useState(0);
   const [cliRange, setCliRange] = useState(0);
+  const [suscRange, setSuscRange] = useState(0);
 
   /**
    * MARGEN BRUTO REAL — la única cosa de esta página que NO sale del Sheet.
@@ -254,13 +257,29 @@ export default function ResumenPage() {
    * cargar precios del otro lado y el último es que todavía no contestó.
    */
   /**
-   * SUSCRIPCIONES Y ALUMNOS ACTIVOS — la otra cosa que no sale del Sheet.
+   * SUSCRIPCIONES Y ALUMNOS ACTIVOS EN VIVO — la otra cosa que no sale del Sheet.
    *
-   * `/api/subscriptions` no lleva parámetros porque el recuento es una FOTO DEL
-   * PRESENTE: el endpoint no sabe cuántos activos había en marzo. Por eso este
-   * bloque NO depende del desplegable de mes y no se grafica en el tiempo —
-   * igual que "Profesores activos ahora". La serie histórica sigue siendo la del
-   * Sheet.
+   * LAS DOS FUENTES, porque se parecen y no son lo mismo:
+   *
+   *   · WooCommerce, vía `/api/subscriptions` (`alumnos.activos` y
+   *     `alumnos.por_origen.suscripcion`) — FOTO DEL PRESENTE. No lleva
+   *     parámetro de mes y no puede llevarlo: cuando una suscripción cambia de
+   *     estado, el estado viejo NO queda registrado en ningún lado, así que no
+   *     hay forma de saber cuántas había activas en marzo. Atarlo al desplegable
+   *     sería prometer un historial que la fuente no tiene — el número saldría
+   *     idéntico para todos los meses y se leería como un bug. Ya pasó: lo
+   *     reportaron como error y no lo era.
+   *
+   *   · DB_KPI del Sheet, columna `suscripciones_activas` — SÍ tiene historial,
+   *     porque se anota a mano mes a mes. A cambio, el mes en curso puede estar
+   *     incompleto: si un alumno todavía no renovó ni canceló, ese movimiento no
+   *     existe aún en la hoja.
+   *
+   * Por eso son DOS paneles con título propio y no dos tarjetas vecinas: no son
+   * el mismo dato con distinto corte temporal, son dos mediciones distintas de
+   * cosas parecidas. El de arriba vive fuera del desplegable de mes (igual que
+   * "Profesores activos ahora" en la página Profesores); el de abajo responde a
+   * su propio rango, como el resto de los gráficos.
    */
   const {
     data: susc,
@@ -397,6 +416,29 @@ export default function ResumenPage() {
       retention_rate: kpi.data[month]?.["retention_rate"] ?? null,
     };
   });
+
+  /**
+   * SUSCRIPCIONES ACTIVAS, HISTÓRICO. Sale de DB_KPI y no del endpoint en vivo:
+   * de las dos fuentes es la única que guarda el pasado (ver la nota de arriba).
+   * Rango propio, como el resto de los gráficos.
+   */
+  const suscActivasRows = applyRange(months, suscRange).map((month) => ({
+    month,
+    suscripciones_activas: kpi.data[month]?.["suscripciones_activas"] ?? null,
+  }));
+
+  /**
+   * MESES TODAVÍA ABIERTOS a la vista. El registro del Sheet se carga a mano y
+   * el mes en curso sólo tiene los movimientos que ya ocurrieron: sin decirlo,
+   * una barra corta al final se lee como una caída y no como un mes a medio
+   * anotar. Se calcula por separado para la tarjeta (el mes del desplegable) y
+   * para el gráfico (cualquier mes del rango visible, que en la práctica es el
+   * último).
+   */
+  const activeMonthEnCurso = esMesEnCurso(activeMonth);
+  const graficoSuscConMesEnCurso = suscActivasRows.some((fila) =>
+    esMesEnCurso(fila.month)
+  );
 
   // ---- Oportunidad del mes (mejor canal por ROI del último mes) ----
   const roiGoogle = getRoiCanalLatest(kpi, "google");
@@ -546,13 +588,13 @@ export default function ResumenPage() {
                 },
               ]}
             />
-            {/* "(Sheet)" en el título por lo mismo que en margen bruto: más
-                abajo hay un recuento EN VIVO de alumnos activos, y sin decir de
-                dónde sale cada uno los dos números se leen como si uno
-                corrigiera al otro. */}
+            {/* "registro mensual" y no "(Sheet)" a secas: más abajo hay un
+                recuento EN VIVO de suscripciones, y decir de qué fuente sale
+                cada uno no alcanza — hay que decir QUÉ mide. Ésta es la del mes
+                elegido arriba, tal como quedó anotada en DB_KPI. */}
             <KpiCard
               className="lg:col-span-2"
-              label="Suscripciones activas (Sheet)"
+              label="Suscripciones activas · registro mensual"
               value={formatNumber(suscActivas)}
               mom={getMoMAtMonth(kpi, "suscripciones_activas", activeMonth)}
               subValues={[
@@ -561,6 +603,21 @@ export default function ResumenPage() {
                   value: formatNumberDelta(suscActivasDelta),
                 },
               ]}
+              hint={
+                activeMonthEnCurso ? (
+                  <div>
+                    {activeMonth} está EN CURSO: el mes actual puede estar
+                    incompleto hasta que se registren todos los movimientos. Si
+                    un alumno todavía no renovó ni canceló, eso no está anotado
+                    aún — un número bajo acá no es una caída.
+                  </div>
+                ) : (
+                  <div>
+                    Columna suscripciones_activas de DB_KPI, del mes elegido
+                    arriba. Cuenta SUSCRIPCIONES de ese mes, no personas de hoy.
+                  </div>
+                )
+              }
             />
             {/* clientes_churn es una TASA (0.76 → "76%"), no un conteo.
                 Umbrales fijos (> 25% peligro · 20-25% mejorable · ≤ 20% bien)
@@ -729,14 +786,16 @@ export default function ResumenPage() {
             />
           </div>
 
-          {/* --- Alumnos activos AHORA (DRC Gestión, no el Sheet) ---
-              Va pegado a las tarjetas KPI y no al final de la página: es el
-              contrapunto en vivo del "Suscripciones activas" de la fila 3, y
-              separarlos con tres gráficos en medio sería esconder justo la
-              comparación que da sentido a la sección. */}
+          {/* --- EN VIVO · suscripciones y alumnos activos AHORA ---
+              Va pegado a las tarjetas KPI y no al final de la página, y con el
+              panel del histórico inmediatamente debajo: son las dos mitades de
+              la misma pregunta y separadas por media página cualquiera de las
+              dos se leería como "el" número de suscripciones activas. Dos
+              paneles con título propio, y no dos tarjetas vecinas, para que se
+              vea de un vistazo que no es un dato duplicado. */}
           <Panel
-            title="Alumnos activos ahora · WooCommerce + reglas de DRC Gestión"
-            description="Foto del PRESENTE, no del mes elegido arriba: el recuento se hace hoy y no cambia con el desplegable. Un alumno cuenta como activo si tiene suscripción de WooCommerce vigente, activación manual en curso o es de Oritalk — la misma regla que decide si puede entrar a clase."
+            title="Suscripciones y alumnos activos ahora (en vivo)"
+            description="Dato actual desde WooCommerce, no tiene historial: es una foto del PRESENTE y NO cambia con el desplegable de mes de arriba. WooCommerce no guarda el estado viejo de una suscripción, así que no hay forma de saber cuántas había activas en un mes pasado — ese histórico sale del Sheet y está en el panel de abajo. Un alumno cuenta como activo si tiene suscripción de WooCommerce vigente, activación manual en curso o es de Oritalk: la misma regla que decide si puede entrar a clase."
           >
             {suscLoading && !susc && (
               <div className="text-sm text-drc-ink-soft">
@@ -766,13 +825,13 @@ export default function ResumenPage() {
                   </Aviso>
                 )}
 
-                {/* Tres tarjetas y no dos: las dos primeras son el MISMO
-                    recuento en vivo a dos alturas (el total y el trozo que hace
-                    MRR), la tercera es del Sheet y de otro mes. El orden importa
-                    — total, subconjunto, y recién después el dato del Sheet —
-                    para que la relación "una está dentro de la otra" se lea
-                    antes que la comparación con el Sheet. */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Dos tarjetas, y las dos del MISMO recuento en vivo a dos
+                    alturas: el total y el trozo que hace MRR. Acá había una
+                    tercera, del Sheet y atada al desplegable de mes: dentro de
+                    un panel titulado "ahora" cambiaba al mover el mes y hacía
+                    leer el bloque entero como si respondiera al desplegable.
+                    Se fue al panel del histórico, que es de donde sale. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <KpiCard
                     label="Alumnos activos (total)"
                     value={formatNumber(activosLive)}
@@ -794,7 +853,7 @@ export default function ResumenPage() {
                       sobrevive a Woo caído, así que la tarjeta sigue diciendo
                       algo aunque el valor principal quede en «—». */}
                   <KpiCard
-                    label="Suscripciones · afectan al MRR"
+                    label="Suscripciones activas ahora (en vivo)"
                     value={formatNumber(conSuscripcionLive)}
                     subValues={[
                       {
@@ -802,14 +861,21 @@ export default function ResumenPage() {
                         value: formatNumber(sinSuscripcionLive),
                       },
                     ]}
-                    hint="Alumnos con una suscripción de WooCommerce vigente: el subconjunto del total que factura de forma recurrente y compone el MRR."
-                  />
-                  <KpiCard
-                    label={`Suscripciones activas${
-                      activeMonth ? ` · ${activeMonth}` : ""
-                    } (Sheet)`}
-                    value={formatNumber(suscActivas)}
-                    hint="Columna suscripciones_activas de DB_KPI, del mes elegido arriba. Cuenta SUSCRIPCIONES de un mes cerrado, no personas de hoy."
+                    hint={
+                      <>
+                        <div>
+                          Alumnos con una suscripción de WooCommerce vigente HOY:
+                          el subconjunto del total que factura de forma
+                          recurrente y compone el MRR.
+                        </div>
+                        <div>
+                          Dato actual desde WooCommerce, no tiene historial: no
+                          cambia con el desplegable de mes
+                          {activeMonth ? ` (ahora ${activeMonth})` : ""}. El mes
+                          a mes está en el panel de abajo.
+                        </div>
+                      </>
+                    }
                   />
                 </div>
 
@@ -817,7 +883,7 @@ export default function ResumenPage() {
                     activo no genere MRR es contraintuitivo, y nadie va a pasar
                     el ratón por encima de un número que cree entender. */}
                 <p className="text-[11px] text-drc-ink-soft">
-                  Las dos primeras salen del mismo recuento en vivo y{" "}
+                  Las dos tarjetas salen del mismo recuento en vivo y{" "}
                   <strong>una está dentro de la otra</strong>: las suscripciones
                   son el trozo del total que paga por WooCommerce. Los alumnos con{" "}
                   <strong>acceso manual (plan de empresa o alta a mano) o de
@@ -825,16 +891,6 @@ export default function ResumenPage() {
                   están activos y reciben clases, pero no generan MRR vía
                   suscripción de WooCommerce: facturan por otra vía o no facturan
                   directamente en Woo, así que no entran en el recurrente.
-                </p>
-
-                {/* La tercera mide otra cosa aunque el número se parezca, y una
-                    coincidencia casual sería aún más engañosa que una
-                    diferencia. */}
-                <p className="text-[11px] text-drc-ink-soft">
-                  La tercera no es ninguna de las dos y no tiene por qué coincidir
-                  con ellas: son <strong>suscripciones del mes cerrado</strong> que
-                  cargamos en el Sheet, no personas de hoy. Una persona puede tener
-                  más de una suscripción, y una activación manual no tiene ninguna.
                 </p>
 
                 {/* Las dos columnas van en `flex flex-col` + `flex-1` y no en
@@ -970,6 +1026,63 @@ export default function ResumenPage() {
                 </p>
               </div>
             )}
+          </Panel>
+
+          {/* --- HISTÓRICO · suscripciones activas mes a mes (DB_KPI) ---
+              Gráfico de barras y no una tarjeta suelta: lo que hace valiosa a
+              esta fuente es justamente que TIENE historial, y una tarjeta con un
+              número lo tira. Además deja ver de un vistazo si el mes en curso
+              viene por debajo de la serie sólo porque todavía se está anotando.
+              Mismo componente y mismo RangeFilter que el resto de los gráficos
+              de la página. */}
+          <Panel
+            title="Suscripciones activas (histórico) · según registro mensual"
+            description="Columna suscripciones_activas de DB_KPI, que se anota a mano mes a mes: ésta SÍ tiene historial y sí responde al rango de la derecha. Cuenta SUSCRIPCIONES de cada mes, no personas de hoy."
+            action={<RangeFilter value={suscRange} onChange={setSuscRange} />}
+          >
+            <BarComparison
+              data={suscActivasRows}
+              /* Una sola serie: la leyenda no identificaría nada que el título
+                 del panel no diga ya (ver showLegend en BarComparison). */
+              showLegend={false}
+              series={[
+                {
+                  key: "suscripciones_activas",
+                  label: "Suscripciones activas",
+                  color: CAT.verde,
+                },
+              ]}
+              valueFormatter={(v) => formatNumber(v)}
+            />
+
+            {/* El aviso aparece SIEMPRE que el mes en curso esté a la vista, y
+                como aviso y no como tooltip: una última barra corta es
+                exactamente lo que se lee como una caída, y nadie pasa el ratón
+                por encima de algo que cree entender. */}
+            {graficoSuscConMesEnCurso && (
+              <div className="mt-4">
+                <Aviso titulo="El mes actual puede estar incompleto">
+                  Los movimientos se anotan en el Sheet a medida que pasan, así
+                  que el mes en curso sólo tiene los que ya ocurrieron: si un
+                  alumno todavía no renovó ni canceló este mes, ese movimiento no
+                  existe todavía en el registro. La última barra puede quedar
+                  corta por eso y no por una caída real.
+                </Aviso>
+              </div>
+            )}
+
+            {/* La comparación con el panel de arriba se explica acá y no allá:
+                quien llega a este gráfico buscando "cuántas suscripciones
+                activas hay" ya vio el número en vivo, y lo que necesita saber es
+                por qué no coincide. */}
+            <p className="mt-4 text-[11px] text-drc-ink-soft">
+              No tiene por qué coincidir con «Suscripciones activas ahora» del
+              panel de arriba, y si coincide es casualidad: acá hay{" "}
+              <strong>suscripciones anotadas mes a mes</strong> y allá{" "}
+              <strong>personas con acceso hoy</strong>. Una persona puede tener
+              más de una suscripción, y una activación manual o de Oritalk no
+              tiene ninguna.
+            </p>
           </Panel>
 
           {/* Dos datos y nada más: dónde invertir y qué se está vendiendo. Los
