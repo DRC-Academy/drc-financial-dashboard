@@ -74,7 +74,15 @@ export async function readKPIDiario(): Promise<DailyKpiData> {
         record[key] = toNumberOrNull(row[index]);
       }
 
-      days.push(day);
+      // UN DÍA, UNA ENTRADA EN days[] — aunque el Sheet traiga la fecha repetida.
+      // `data` es un mapa y de por sí colapsa los duplicados (gana la última
+      // fila), pero `days` es un ARRAY y es lo que recorren daysInRange() y
+      // sumOver(): un push por fila hace que un día repetido se sume dos veces.
+      // Pasó de verdad — el Sheet tenía dos filas para el 20 y el 21 de julio de
+      // 2026 y julio salía 637,64 € inflado, lo bastante para dar vuelta el
+      // signo del comparativo de la tarjeta de ingresos. El síntoma visible era
+      // que un rango de 22 días decía "vs. 24d previos".
+      if (!(day in data)) days.push(day);
       data[day] = record;
     }
 

@@ -33,7 +33,7 @@ import {
   getRangeMoM,
   previousRange,
 } from "@/lib/kpiDiarioHelpers";
-import { formatDayLabel, formatDayShort } from "@/lib/isoDate";
+import { formatDayLabel, formatDayRangeShort, formatDayShort } from "@/lib/isoDate";
 import { CAT, INGRESO, NEUTRO } from "@/lib/chartColors";
 import type { DailyKpiData } from "@/types/kpi";
 
@@ -164,9 +164,16 @@ export default function ResumenDiarioPage() {
     () => daysInRange(days, activeRange),
     [days, activeRange]
   );
-  const previoDias = useMemo(
-    () => daysInRange(days, previousRange(days, activeRange)),
+  // Tramo contra el que se compara: el MISMO tramo del mes anterior (ver
+  // previousRange). Se guarda el rango, no sólo sus días, porque el comparativo
+  // de cada tarjeta lo nombra por fecha.
+  const rangoPrevio = useMemo(
+    () => previousRange(days, activeRange),
     [days, activeRange]
+  );
+  const previoDias = useMemo(
+    () => daysInRange(days, rangoPrevio),
+    [days, rangoPrevio]
   );
 
   const agg = (key: string) => aggregate(kpi, key, rangoDias);
@@ -176,7 +183,12 @@ export default function ResumenDiarioPage() {
   const nDias = rangoDias.length;
   const ultimoDia = rangoDias[rangoDias.length - 1] ?? "";
   // Etiqueta del comparativo n3: contra qué se compara el badge de cada tarjeta.
-  const periodo = previoDias.length > 0 ? `vs. ${previoDias.length}d previos` : "";
+  // Va con las FECHAS del tramo previo y no con su largo ("vs. 22d previos"),
+  // que era verdad y a la vez tapaba contra qué tramo del mes se comparaba.
+  const periodo =
+    rangoPrevio && previoDias.length > 0
+      ? `vs. ${formatDayRangeShort(rangoPrevio.from, rangoPrevio.to)}`
+      : "";
 
   // ---- Fila 1 · Ingresos ----
   const b2c = agg("ingresos_B2C_netos");
@@ -255,8 +267,21 @@ export default function ResumenDiarioPage() {
             {nDias === 1 ? "día" : "días"} ·{" "}
             <span className="tabular">{formatDayLabel(rangoDias[0])}</span> →{" "}
             <span className="tabular">{formatDayLabel(ultimoDia)}</span>
-            {previoDias.length > 0 && (
-              <> · comparado contra los {previoDias.length} días previos</>
+            {rangoPrevio && previoDias.length > 0 && (
+              <>
+                {" "}
+                · comparado contra{" "}
+                <span className="tabular">
+                  {formatDayLabel(rangoPrevio.from)}
+                </span>{" "}
+                →{" "}
+                <span className="tabular">{formatDayLabel(rangoPrevio.to)}</span>{" "}
+                (
+                <span className="tabular font-medium text-drc-ink">
+                  {previoDias.length}
+                </span>{" "}
+                {previoDias.length === 1 ? "día" : "días"})
+              </>
             )}
           </div>
 

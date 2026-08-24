@@ -1,5 +1,5 @@
 import type { DailyKpiData, MetricValue } from "@/types/kpi";
-import { addDays, diffDays } from "./isoDate";
+import { addDays, addMonths, diffDays } from "./isoDate";
 
 /**
  * Helpers PUROS de la hoja "KPI Diario" (client-safe: la página los importa sin
@@ -227,22 +227,57 @@ export function aggregate(
 }
 
 /**
- * Ventana ANTERIOR de igual largo a la del rango, para el comparativo de las
- * tarjetas. Un rango de 7 días compara contra los 7 días previos; uno de 1 día,
- * contra el día anterior. Se recorta a los días que existen en el dataset: si el
- * rango arranca en el primer día cargado, la ventana previa queda vacía y el
- * comparativo no se muestra (en vez de inventar un cero).
+ * Ventana ANTERIOR contra la que compara el comparativo de las tarjetas.
+ *
+ * ES EL MISMO TRAMO DEL MES ANTERIOR, no los N días inmediatamente previos:
+ * 1-22 ago compara contra 1-22 jul. Esa distinción no es cosmética. La
+ * facturación de este negocio está cargada al principio de mes (las
+ * renovaciones caen por día del mes), así que deslizar la ventana hacia atrás
+ * cambia QUÉ tramo del ciclo se mide. Con datos reales de 2026: 1-22 ago
+ * (14.449 €) contra los 22 días previos —10-31 jul, 12.944 €— daba +1.505 €,
+ * mientras que contra el mismo tramo —1-22 jul, 16.556 €— da −2.107 €. El signo
+ * entero dependía de por dónde cortaba la ventana.
+ *
+ * addMonths() hace clamp al último día del mes destino, así que 29-31 mar
+ * compara contra 28 feb en vez de desbordar a marzo. El tramo previo puede
+ * quedar más corto que el actual; la página lo dice mostrando las fechas
+ * exactas contra las que compara, en vez de dejarlo implícito.
+ *
+ * EXCEPCIÓN — rangos de más de un mes: ahí retroceder un mes se solaparía con el
+ * propio rango (los "últimos 6 meses" contra "los 6 meses que empiezan un mes
+ * antes" comparten cinco), y comparar un período contra sí mismo no dice nada.
+ * Para esos se mantiene la ventana deslizada de igual largo, que sí es disjunta.
+ *
+ * Se recorta a los días que existen en el dataset: si el tramo previo cae
+ * entero antes del primer día cargado, devuelve null y el comparativo no se
+ * muestra (en vez de inventar un cero).
  */
 export function previousRange(
   days: string[],
   range: DayRange | null
 ): DayRange | null {
   if (!range || days.length === 0) return null;
+
+  const mismoTramoMesAnterior: DayRange = {
+    from: addMonths(range.from, -1),
+    to: addMonths(range.to, -1),
+  };
+
+  // Se solapa con el rango actual → el rango dura más de un mes.
+  const previo: DayRange =
+    mismoTramoMesAnterior.to < range.from
+      ? mismoTramoMesAnterior
+      : ventanaDeslizada(range);
+
+  if (previo.to < days[0]) return null;
+  return previo;
+}
+
+/** Los N días inmediatamente anteriores al rango, con N = largo del rango. */
+function ventanaDeslizada(range: DayRange): DayRange {
   const largo = diffDays(range.from, range.to) + 1;
   const to = addDays(range.from, -1);
-  const from = addDays(to, -(largo - 1));
-  if (to < days[0]) return null;
-  return { from, to };
+  return { from: addDays(to, -(largo - 1)), to };
 }
 
 /**

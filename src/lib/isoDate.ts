@@ -155,6 +155,24 @@ export function formatDayShort(iso: string): string {
 }
 
 /**
+ * Tramo de días en corto: "1-22 jul" si empieza y termina en el mismo mes,
+ * "25 ene - 24 jul" si lo cruza. Un solo día se queda en "12 ago".
+ *
+ * Existe para que el comparativo de la página diaria diga en la propia tarjeta
+ * contra QUÉ fechas compara. Antes decía "vs. 22d previos", que es cierto y a la
+ * vez inútil: no permite notar que está comparando contra el tramo equivocado
+ * del mes, que es exactamente el bug que se nos escapó.
+ */
+export function formatDayRangeShort(from: string, to: string): string {
+  if (!isIsoDate(from) || !isIsoDate(to)) return "—";
+  if (from === to) return formatDayShort(from);
+  if (from.slice(0, 7) === to.slice(0, 7)) {
+    return `${Number(from.slice(8, 10))}-${formatDayShort(to)}`;
+  }
+  return `${formatDayShort(from)} - ${formatDayShort(to)}`;
+}
+
+/**
  * Celdas de un calendario mensual, en semanas de lunes a domingo. Las posiciones
  * anteriores al día 1 y posteriores al último se rellenan con null para que la
  * grilla de 7 columnas quede alineada.
