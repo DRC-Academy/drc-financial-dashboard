@@ -66,6 +66,22 @@ export interface PayoutsMonth {
   /** true si es el mes en curso → el importe es el cálculo hasta hoy, no un cierre. */
   is_current_month: boolean;
   total_amount: number;
+  /**
+   * PLANTILLA COMPLETA de profesores de la academia (27/08/2026). Es el conteo
+   * real de gente contratada, no de gente con actividad: no depende de que
+   * tengan alumnos asignados ni de que hayan facturado, y las 2 cuentas de test
+   * ya vienen excluidas del otro lado.
+   *
+   * Es el número que manda en la tarjeta de conteo de la página, porque es el
+   * único que no cambia por temporada: teachers_with_amount y
+   * active_teachers_now son subconjuntos suyos y se leen CONTRA él.
+   *
+   * Llegó después que el resto, así que NO entra en la validación dura de
+   * lib/externalPayouts (el otro lado lo confirmó): si el endpoint volviera a
+   * una versión anterior, este campo llega undefined pese al tipo y la tarjeta
+   * cae a "—" sola, sin tumbar el mes entero.
+   */
+  teachers_total: number;
   /** Profesores que facturaron algo ESE mes. Es el número histórico real. */
   teachers_with_amount: number;
   /**

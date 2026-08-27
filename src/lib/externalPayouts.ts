@@ -95,6 +95,16 @@ export async function readPayoutsMonth(
         );
       }
 
+      // Misma política con teachers_total (27/08/2026), que es el conteo de la
+      // plantilla completa: fuera de la validación dura para que una versión
+      // anterior del endpoint deje la tarjeta de profesores en "—" en vez de
+      // dejar la página sin gasto. Se avisa para que el "—" no sea mudo.
+      if (!isNumber(raw.teachers_total)) {
+        console.warn(
+          `[externalPayouts] ${month} llega sin teachers_total: DRC Gestión está respondiendo una versión anterior del endpoint. El conteo de plantilla queda en "—"; los profesores con alumnos y los que facturaron no se ven afectados.`
+        );
+      }
+
       return raw as unknown as PayoutsMonth;
     },
     TTL_MS

@@ -92,8 +92,40 @@ export default function ProfesoresPage() {
   const mesActivoLabel = mesActivo ? apiMonthToLabel(mesActivo) : "";
 
   const gasto: MetricValue = mes?.total_amount ?? null;
+
+  /**
+   * LOS TRES CONTEOS DE PROFESORES, que NO son el mismo número y no miden lo
+   * mismo. De mayor a menor, y cada uno subconjunto del anterior:
+   *
+   *   plantilla  (teachers_total)        → la academia entera. No varía con el
+   *                                        mes ni con la actividad. Es el conteo
+   *                                        real, y por eso es el n1 de la
+   *                                        tarjeta.
+   *   activos    (active_teachers_now)   → los que tienen algún alumno asignado
+   *                                        AHORA. Foto del presente: sale igual
+   *                                        pidas el mes que pidas.
+   *   facturaron (teachers_with_amount)  → los que cobraron algo el mes elegido.
+   *                                        Éste sí es histórico y sí cambia con
+   *                                        el desplegable.
+   *
+   * `teachers_total` llegó después y queda fuera de la validación dura del lector
+   * (ver lib/externalPayouts): si el endpoint volviera atrás, llega undefined
+   * pese al tipo y esto cae a null → "—", sin llevarse el resto por delante.
+   */
+  const plantilla: MetricValue = mes?.teachers_total ?? null;
   const facturaron: MetricValue = mes?.teachers_with_amount ?? null;
   const activos: MetricValue = mes?.active_teachers_now ?? null;
+
+  /**
+   * "21 de 29" — facturaron SIEMPRE se lee contra la plantilla, nunca suelto:
+   * un "21" a secas se lee como si fueran todos los profesores que hay. Sin
+   * plantilla (endpoint viejo) se muestra el número solo antes que inventarle
+   * un denominador.
+   */
+  const facturaronSobrePlantilla =
+    plantilla !== null
+      ? `${formatNumber(facturaron)} de ${formatNumber(plantilla)}`
+      : formatNumber(facturaron);
 
   /**
    * Gasto medio = total del mes ÷ profesores que FACTURARON ese mes.
@@ -173,19 +205,36 @@ export default function ProfesoresPage() {
               definido para el gasto en profesores, y un umbral inventado se lee
               igual de firme que uno acordado. */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* El n1 es la PLANTILLA, no la actividad: es el único de los tres
+                conteos que responde a "cuántos profesores tiene la academia".
+                Los otros dos bajan a n2 porque son recortes suyos —quién tiene
+                alumnos hoy y quién cobró este mes—, y de n1 se leían como si
+                fueran la plantilla entera. */}
             <KpiCard
-              label="Profesores activos ahora"
-              value={formatNumber(activos)}
+              label="Profesores"
+              value={formatNumber(plantilla)}
+              subValues={[
+                {
+                  label: "Con alumnos asignados ahora",
+                  value: formatNumber(activos),
+                },
+                {
+                  label: "Facturaron este mes",
+                  value: facturaronSobrePlantilla,
+                },
+              ]}
               hint={
                 <>
                   <div>
-                    Dato actual, no histórico: profesores con al menos un alumno
-                    activo hoy.
+                    Plantilla completa según DRC Gestión, tengan alumnos o no.
+                    No varía con el mes del desplegable
+                    {mesActivoLabel ? ` (ahora ${mesActivoLabel})` : ""} ni con
+                    la actividad.
                   </div>
                   <div>
-                    No cambia con el mes del desplegable
-                    {mesActivoLabel ? ` (ahora ${mesActivoLabel})` : ""} — es una
-                    foto del presente, y por eso tampoco aparece en el gráfico.
+                    De los dos de abajo, «con alumnos» es una foto de HOY (sale
+                    igual en todos los meses, y por eso no está en el gráfico) y
+                    «facturaron» sí es del mes elegido.
                   </div>
                 </>
               }
@@ -195,12 +244,6 @@ export default function ProfesoresPage() {
                 mesActivoLabel ? ` · ${mesActivoLabel}` : ""
               }`}
               value={formatCurrency(gasto)}
-              subValues={[
-                {
-                  label: "Profesores que facturaron este mes",
-                  value: formatNumber(facturaron),
-                },
-              ]}
               hint={
                 mes.is_current_month
                   ? "Mes en curso: es lo que llevan ganado hasta hoy, no un cierre."
