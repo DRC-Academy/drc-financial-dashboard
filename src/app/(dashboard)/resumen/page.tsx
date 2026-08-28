@@ -157,11 +157,19 @@ const COLUMNAS_DB_KPI = [
  * `pending-cancel` sí se queda, y no como "cancelada": pidieron la baja pero
  * siguen pagando hasta que termine el ciclo, así que cuentan en «Dan acceso» y
  * sin ellas ese total no cuadraría con nada de lo que se ve.
+ *
+ * `pending` ("Pendientes de pago") entró en la auditoría del 28/08/2026. Hasta
+ * entonces DRC Gestión no lo tenía en su mapa de estados y llegaba por
+ * `otros_estados`, así que esta lista se lo saltaba y la fila salía cruda:
+ * "pending (sin mapear) 4". Va PEGADO a `on-hold` porque son las dos caras del
+ * mismo problema —un pago que no entró: acá nunca llegó a entrar, allá entró y
+ * después falló— y separarlas obligaría a buscarlas en dos sitios de la lista.
  */
 const ESTADO_WOO_ORDEN = [
   "active",
   "pending-cancel",
   "on-hold",
+  "pending",
   "scheduled",
   "expired",
 ] as const;
@@ -189,6 +197,9 @@ const ESTADO_WOO_LABEL: Record<string, string> = {
   active: "Activas",
   "pending-cancel": "Con baja pedida, acceso hasta fin de ciclo",
   "on-hold": "En espera",
+  // El mismo nombre que usa el admin de WooCommerce, a propósito: es contra esa
+  // pantalla contra la que se cuadra esta lista cuando un número no cierra.
+  pending: "Pendientes de pago",
   scheduled: "Programadas",
   expired: "Vencidas",
 };

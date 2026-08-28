@@ -34,6 +34,13 @@ export interface WooCount {
   otros_estados: Record<string, number>;
   /** Suscripciones que DAN ACCESO: active + pending-cancel. */
   dan_acceso: number;
+  /**
+   * Emails DISTINTOS entre las suscripciones que dan acceso. `dan_acceso` menos
+   * esto es la gente con MÁS DE UNA suscripción activa a la vez. Todavía no se
+   * muestra en ninguna pantalla: está en el tipo porque este archivo es el
+   * espejo del contrato y un espejo desactualizado se descubre tarde y mal.
+   */
+  emails_con_acceso: number;
   paginas_leidas: number;
   /** Motivo del fallo cuando ok:false. null si fue bien. */
   error: string | null;
@@ -63,6 +70,21 @@ export interface SubscriptionsSnapshot {
       manual: { total: number; plan_empresa: number; a_mano: number };
       oritalk: number;
     };
+    /**
+     * Alumnos con override (manual u Oritalk) que ADEMÁS tienen suscripción de
+     * WooCommerce con acceso. NO es un descuadre: cuentan en su bucket de
+     * `por_origen` por precedencia, y por eso no están en `suscripcion`.
+     *
+     * Junto a `emails_con_acceso` es lo que cierra por qué `dan_acceso`
+     * (SUSCRIPCIONES) no coincide con `por_origen.suscripcion` (PERSONAS):
+     *   personas en base con suscripción = suscripcion + este campo
+     *   suscripciones de más por persona = (dan_acceso − sin_email − sin_alumno)
+     *                                      − esas personas
+     * Con los datos del 28/08/2026: 135 − 0 − 5 = 130 sobre 129 + 0 personas →
+     * 5 huérfanas y 1 persona con dos suscripciones a la vez. Tampoco se muestra
+     * todavía; ver la nota de `emails_con_acceso`.
+     */
+    con_override_y_suscripcion: number | null;
   };
   descuadres: {
     /** Pagan en Woo pero no existen en la base: altas sin dar de alta. */
