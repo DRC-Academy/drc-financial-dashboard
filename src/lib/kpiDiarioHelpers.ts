@@ -1,5 +1,5 @@
 import type { DailyKpiData, MetricValue } from "@/types/kpi";
-import { addDays, addMonths, diffDays } from "./isoDate";
+import { addDays, addMonths, diffDays, monthKey } from "./isoDate";
 
 /**
  * Helpers PUROS de la hoja "KPI Diario" (client-safe: la página los importa sin
@@ -310,6 +310,111 @@ export function getRangeDelta(
   const p = aggregate(kpi, key, previo);
   if (a === null || p === null) return null;
   return a - p;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tramo transcurrido del mes, para comparar mes contra mes SIN mezclar peras   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * TRAMO = del día 1 a un día concreto de un mes. Existe para responder "¿vamos
+ * mejor o peor que el mes pasado?" SIN comparar un mes a medio hacer contra uno
+ * cerrado: si hoy es 23, lo honesto es 1-23 de agosto contra 1-23 de julio, no
+ * contra julio entero. El MoM de las tarjetas (mes completo vs mes completo
+ * anterior) mide otra cosa y sigue donde estaba.
+ *
+ * Es el mismo criterio que ya usa previousRange() para el comparativo de la
+ * página diaria, sacado a su propio tipo porque acá el corte no lo pone un
+ * DateRangePicker: lo pone el calendario.
+ */
+export interface TramoMes {
+  /** Clave de mes, "2026-08". */
+  mes: string;
+  /** Primer día del tramo, siempre el 1: "2026-08-01". */
+  from: string;
+  /** Último día del tramo: "2026-08-23". */
+  to: string;
+  /** Día del mes en el que corta el tramo (1-31), ya recortado a los que existen. */
+  corte: number;
+  /**
+   * true cuando el mes SE QUEDÓ SIN DÍAS antes de llegar al corte pedido: pedir
+   * "hasta el 31" a febrero devuelve el 28 y marca esto. El tramo sigue siendo
+   * válido, pero es MÁS CORTO que aquel con el que se lo compara, así que los
+   * totales ya no se leen como un empate justo y la página tiene que decirlo.
+   */
+  truncado: boolean;
+}
+
+/** Cuántos días tiene el mes de una clave "YYYY-MM". */
+function diasDelMes(mes: string): number {
+  const [y, m] = mes.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/**
+ * Tramo del día 1 al día `corte` de `mes`, recortado al último día que ese mes
+ * tiene de verdad (ver `truncado`).
+ */
+export function tramoHasta(mes: string, corte: number): TramoMes {
+  const ultimo = diasDelMes(mes);
+  const dia = Math.max(1, Math.min(corte, ultimo));
+  return {
+    mes,
+    from: `${mes}-01`,
+    to: `${mes}-${String(dia).padStart(2, "0")}`,
+    corte: dia,
+    truncado: dia < corte,
+  };
+}
+
+/**
+ * El tramo transcurrido del mes en curso, medido por el ÚLTIMO DÍA CON FILA EN
+ * LA HOJA y no por el reloj: si el Sheet va tres días atrasado, tomar "hoy"
+ * metería tres días vacíos en el tramo actual y ninguno en el del mes anterior
+ * —una caída inventada del tamaño del retraso—. Devuelve null si no hay días.
+ */
+export function tramoTranscurrido(days: string[]): TramoMes | null {
+  if (days.length === 0) return null;
+  const ultimo = days[days.length - 1];
+  return tramoHasta(ultimo.slice(0, 7), Number(ultimo.slice(8, 10)));
+}
+
+/** El mismo tramo (día 1 → mismo día del mes) del mes anterior. */
+export function tramoMesAnterior(tramo: TramoMes): TramoMes {
+  return tramoHasta(monthKey(addMonths(tramo.from, -1)), tramo.corte);
+}
+
+/**
+ * Acumulado día a día de una métrica dentro de un tramo, indexado por DÍA DEL
+ * MES: la posición i trae la suma de los días 1..i+1. Es lo que permite
+ * superponer dos meses en el mismo eje — el eje X es el día del mes, no la
+ * fecha, así que el 12 de agosto cae encima del 12 de julio.
+ *
+ * Acumulado y no valor diario suelto a propósito: con altas de 0 a 3 por día las
+ * dos series se cruzan todo el rato y no se ve quién va ganando, que es
+ * justamente lo único que hay que ver acá.
+ *
+ * SÓLO PARA MÉTRICAS DE FLUJO (las de modo `sum` en AGG). Acumular un stock como
+ * MRR o suscripciones_activas no significa nada.
+ *
+ * Un día sin fila arrastra el acumulado anterior en vez de cortar la línea: el
+ * acumulado a día 12 sigue siendo el mismo aunque el 12 no se haya cargado. Los
+ * días previos a la primera fila del tramo sí quedan en null, para no dibujar un
+ * 0 donde lo que hay es un mes que todavía no empezó a cargarse.
+ */
+export function acumuladoPorDiaDelMes(
+  kpi: DailyKpiData,
+  key: string,
+  tramo: TramoMes
+): MetricValue[] {
+  const out: MetricValue[] = [];
+  let acc: number | null = null;
+  for (let d = 1; d <= tramo.corte; d++) {
+    const v = kpi.data[`${tramo.mes}-${String(d).padStart(2, "0")}`]?.[key];
+    if (v !== null && v !== undefined) acc = (acc ?? 0) + v;
+    out.push(acc);
+  }
+  return out;
 }
 
 /** Serie temporal de varias claves sobre los días indicados, para los gráficos. */

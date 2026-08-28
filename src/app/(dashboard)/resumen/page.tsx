@@ -49,8 +49,17 @@ import {
   EMPTY_PRODUCTO_KPI,
   type ProductoKpiData,
 } from "@/lib/productoKpiHelpers";
+import {
+  EMPTY_DAILY_KPI,
+  acumuladoPorDiaDelMes,
+  aggregate,
+  daysInRange,
+  tramoMesAnterior,
+  tramoTranscurrido,
+} from "@/lib/kpiDiarioHelpers";
+import { formatDayRangeShort } from "@/lib/isoDate";
 import { CAT, GASTO, INGRESO, NEUTRO } from "@/lib/chartColors";
-import type { DBKpiData } from "@/types/kpi";
+import type { DailyKpiData, DBKpiData } from "@/types/kpi";
 import type { PayoutsMonth, PayoutsSummary } from "@/types/profesores";
 import type { SubscriptionsSnapshot } from "@/types/suscripciones";
 
@@ -156,6 +165,25 @@ const ESTADO_WOO_ORDEN = [
   "scheduled",
   "expired",
 ] as const;
+
+/**
+ * MÉTRICA DEL COMPARATIVO "MISMO TRAMO DEL MES" — columna de la hoja "KPI
+ * Diario", no de DB_KPI.
+ *
+ * `clientes_nuevos` y no `clientes`: la hoja diaria trae las dos y NO son lo
+ * mismo. `clientes` son todos los que compraron ese día (nuevos + recurrentes),
+ * así que sube con las renovaciones y se lee como si hubieran entrado clientes
+ * que ya estaban; `clientes_nuevos` son las ALTAS, que es lo que se quiere
+ * comparar cuando la pregunta es "¿este mes estamos consiguiendo más clientes
+ * que el pasado?". Las dos están cargadas los 608 días de la hoja, así que la
+ * elección es de significado y no de disponibilidad. `clientes_recurrentes` es
+ * el resto de la resta y `clientes_acumulados` es un stock (no se acumula).
+ *
+ * Tiene que ser una métrica de FLUJO (modo `sum` en kpiDiarioHelpers): el
+ * gráfico dibuja el acumulado del tramo, y acumular un stock no significa nada.
+ */
+const METRICA_TRAMO = "clientes_nuevos";
+const METRICA_TRAMO_LABEL = "Clientes nuevos";
 
 const ESTADO_WOO_LABEL: Record<string, string> = {
   active: "Activas",
@@ -440,6 +468,95 @@ export default function ResumenPage() {
     esMesEnCurso(fila.month)
   );
 
+  /**
+   * ---- MISMO TRAMO DEL MES, CONTRA EL MES PASADO ----
+   *
+   * La única cosa de esta página que lee la hoja "KPI Diario" (la que alimenta
+   * Resumen Ejecutivo (D)), y la lee porque es la ÚNICA con granularidad de día:
+   * DB_KPI sólo tiene el total del mes, así que con ella no se puede cortar "del
+   * 1 al 23" y este comparativo no existiría.
+   *
+   * QUÉ MIDE, y en qué se diferencia del MoM que ya está en las tarjetas: el MoM
+   * compara mes COMPLETO contra mes COMPLETO anterior, así que el mes en curso
+   * siempre pierde —le faltan días—. Acá se compara el tramo transcurrido contra
+   * EL MISMO TRAMO del mes anterior (1-23 ago vs 1-23 jul), que es la única
+   * comparación que responde "¿vamos mejor?" sin que la respuesta dependa de en
+   * qué día del mes estemos mirando.
+   *
+   * El corte lo pone el último día CON FILA en la hoja, no el reloj: ver
+   * tramoTranscurrido() en kpiDiarioHelpers.
+   */
+  const diario = useLiveData<DailyKpiData>("/api/kpi-diario", 60_000);
+  const kpiDiario = diario.data ?? EMPTY_DAILY_KPI;
+
+  const tramoActual = tramoTranscurrido(kpiDiario.days);
+  const tramoPrevio = tramoActual ? tramoMesAnterior(tramoActual) : null;
+
+  const totalTramoActual = tramoActual
+    ? aggregate(kpiDiario, METRICA_TRAMO, daysInRange(kpiDiario.days, tramoActual))
+    : null;
+  const totalTramoPrevio = tramoPrevio
+    ? aggregate(kpiDiario, METRICA_TRAMO, daysInRange(kpiDiario.days, tramoPrevio))
+    : null;
+
+  const deltaTramo =
+    totalTramoActual === null || totalTramoPrevio === null
+      ? null
+      : totalTramoActual - totalTramoPrevio;
+  // En puntos (×100), que es lo que espera el badge de KpiCard. Con un tramo
+  // previo de 0 no hay porcentaje que calcular y queda sólo el delta absoluto.
+  const momTramo =
+    deltaTramo === null || !totalTramoPrevio
+      ? null
+      : (deltaTramo / Math.abs(totalTramoPrevio)) * 100;
+
+  /**
+   * Las dos curvas superpuestas por DÍA DEL MES (no por fecha): el eje X va del
+   * 1 al día de corte y cada punto es el acumulado hasta ahí, así la línea de
+   * arriba es, literalmente, el mes que va ganando.
+   *
+   * El largo lo manda el tramo más largo de los dos. Cuando el mes anterior se
+   * quedó corto (febrero contra un corte en 30), su serie termina antes y la
+   * línea se corta: es exactamente lo que pasó, y taparlo repitiendo el último
+   * valor dibujaría días que ese mes no tuvo.
+   */
+  const filasTramo = (() => {
+    if (!tramoActual || !tramoPrevio) return [];
+    const actual = acumuladoPorDiaDelMes(kpiDiario, METRICA_TRAMO, tramoActual);
+    const previo = acumuladoPorDiaDelMes(kpiDiario, METRICA_TRAMO, tramoPrevio);
+    const dias = Math.max(actual.length, previo.length);
+    return Array.from({ length: dias }, (_, i) => ({
+      dia: i + 1,
+      actual: actual[i] ?? null,
+      previo: previo[i] ?? null,
+    }));
+  })();
+
+  const etiquetaTramoActual = tramoActual
+    ? formatDayRangeShort(tramoActual.from, tramoActual.to)
+    : "";
+  const etiquetaTramoPrevio = tramoPrevio
+    ? formatDayRangeShort(tramoPrevio.from, tramoPrevio.to)
+    : "";
+
+  /**
+   * El mes anterior no llegó al día de corte (pasa con los cortes 29-31), así
+   * que los dos tramos NO miden el mismo número de días y el total del actual
+   * juega con días de ventaja. No se corrige recortando el actual —eso sería
+   * esconder días que sí ocurrieron—: se avisa y se deja la lectura al que mira.
+   */
+  const tramosDeDistintoLargo =
+    tramoActual !== null &&
+    tramoPrevio !== null &&
+    tramoPrevio.corte < tramoActual.corte;
+
+  /**
+   * El tramo previo cae fuera de lo que la hoja tiene cargado (el histórico
+   * diario arranca después). Sin él no hay comparación: "sin datos" antes que
+   * pintar el mes actual solo, que se leería como que el anterior fue 0.
+   */
+  const sinTramoPrevio = totalTramoPrevio === null;
+
   // ---- Oportunidad del mes (mejor canal por ROI del último mes) ----
   const roiGoogle = getRoiCanalLatest(kpi, "google");
   const roiMeta = getRoiCanalLatest(kpi, "meta");
@@ -485,6 +602,133 @@ export default function ResumenPage() {
           </div>
         }
       />
+
+      {/*
+        ARRIBA DE TODO, y FUERA del `hasAnyData` que gobierna el resto de la
+        página: son las dos cifras que primero se buscan al abrir el dashboard
+        —cuánta gente hay dentro y cuánta paga— y no salen del Sheet, así que un
+        DB_KPI vacío o caído no tiene por qué llevárselas por delante.
+
+        Las dos vienen del MISMO recuento en vivo de DRC Gestión y una está
+        dentro de la otra: total de alumnos con acceso y, dentro, los que pagan
+        una suscripción de WooCommerce (los que componen el MRR). El desglose
+        completo —por dónde entra el acceso y en qué estado están las
+        suscripciones de Woo— sigue más abajo, en su panel.
+      */}
+      <div className="mb-8 space-y-3">
+        {/* El LiveIndicator del encabezado habla del Sheet (lo dice su propio
+            texto de error), así que acá NO se repite: estas dos tarjetas salen
+            de DRC Gestión, y el momento del recuento lo da el pie de abajo con
+            la fecha que manda el propio endpoint. */}
+        <h3 className="text-xs uppercase tracking-wide text-drc-ink-soft">
+          Ahora mismo · en vivo
+        </h3>
+
+        {suscLoading && !susc && (
+          <div className="text-sm text-drc-ink-soft">
+            Cargando suscripciones…
+          </div>
+        )}
+
+        {!suscLoading && !susc && (
+          <EmptyState label="Sin datos de suscripciones: DRC Gestión no respondió" />
+        )}
+
+        {susc && (
+          <>
+            {/* Woo caído NO vacía el bloque: las activaciones manuales y Oritalk
+                salen de la base del otro lado y siguen siendo válidas. Sólo se
+                cae lo que depende de WooCommerce. */}
+            {wooCaido && (
+              <Aviso titulo="Sin conexión con WooCommerce">
+                DRC Gestión no pudo leer las suscripciones
+                {susc.woocommerce.error ? ` (${susc.woocommerce.error})` : ""}, así
+                que el total de activos y los que entran por suscripción quedan en
+                «—». No son ceros, es un dato que falta.
+              </Aviso>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <KpiCard
+                size="titular"
+                label="Alumnos activos (total)"
+                value={formatNumber(activosLive)}
+                subValues={[
+                  {
+                    label: "Alumnos en el sistema",
+                    value: formatNumber(susc.alumnos.en_base),
+                  },
+                  {
+                    label: "Inactivos",
+                    value: formatNumber(susc.alumnos.inactivos),
+                  },
+                ]}
+                hint={
+                  <>
+                    <div>
+                      Cuenta PERSONAS con acceso hoy, por cualquiera de los tres
+                      orígenes (suscripción, activación manual u Oritalk). Es el
+                      mismo número que decide quién puede entrar a clase. NO todas
+                      facturan como MRR.
+                    </div>
+                    <div>
+                      Foto del PRESENTE, sin historial: no cambia con el
+                      desplegable de mes
+                      {activeMonth ? ` (ahora ${activeMonth})` : ""}.
+                    </div>
+                  </>
+                }
+              />
+              {/* El sub-valor "sin suscripción" va acá y no en la tarjeta del
+                  total a propósito: es la resta que explica por qué este número
+                  es menor, y puesto al lado se lee solo. Además sobrevive a Woo
+                  caído, así que la tarjeta sigue diciendo algo aunque el valor
+                  principal quede en «—». */}
+              <KpiCard
+                size="titular"
+                label="Suscripciones activas (en vivo)"
+                value={formatNumber(conSuscripcionLive)}
+                subValues={[
+                  {
+                    label: "Activos sin suscripción",
+                    value: formatNumber(sinSuscripcionLive),
+                  },
+                ]}
+                hint={
+                  <>
+                    <div>
+                      Alumnos con una suscripción de WooCommerce vigente HOY: el
+                      subconjunto del total que factura de forma recurrente y
+                      compone el MRR.
+                    </div>
+                    <div>
+                      Foto del PRESENTE, sin historial: no cambia con el
+                      desplegable de mes. El mes a mes NO es éste — sale del
+                      Sheet y está más abajo, etiquetado «según registro
+                      mensual».
+                    </div>
+                  </>
+                }
+              />
+            </div>
+
+            {/* La aclaración va siempre y no como tooltip: que un alumno activo
+                no genere MRR es contraintuitivo, y nadie va a pasar el ratón por
+                encima de un número que cree entender. */}
+            <p className="text-[11px] text-drc-ink-soft">
+              Las dos tarjetas salen del mismo recuento en vivo del{" "}
+              {susc.today_madrid} (hora de España) y{" "}
+              <strong>una está dentro de la otra</strong>: las suscripciones son
+              el trozo del total que paga por WooCommerce. Los alumnos con{" "}
+              <strong>
+                acceso manual (plan de empresa o alta a mano) o de Oritalk
+              </strong>{" "}
+              están activos y reciben clases, pero no generan MRR vía suscripción
+              de WooCommerce.
+            </p>
+          </>
+        )}
+      </div>
 
       {loading && !hasAnyData && (
         <div className="text-sm text-drc-ink-soft">Cargando datos del Sheet…</div>
@@ -545,36 +789,12 @@ export default function ResumenPage() {
               mom={getMoMAtMonth(kpi, "ingresos_oritalk", activeMonth)}
             />
 
-            {/* --- Fila 2 · Pedidos --- */}
-            <KpiCard
-              className="sm:col-span-2 lg:col-span-3"
-              size="titular"
-              label="Pedidos"
-              value={formatNumber(pedidos)}
-              mom={getMoMAtMonth(kpi, "pedidos", activeMonth)}
-              subValues={[
-                { label: "vs. mes anterior", value: formatNumberDelta(pedidosDelta) },
-              ]}
-            />
-            <KpiCard
-              className="lg:col-span-2"
-              label="AOV"
-              value={formatCurrency(getValueAtMonth(kpi, "AOV", activeMonth))}
-              mom={getMoMAtMonth(kpi, "AOV", activeMonth)}
-            />
-            {/* "ventas" es el TOTAL del mes y cuadra con el embudo de ads
-                (CAC ≈ ads_captacion/ventas, CR_clientes ≈ ventas/leads). El
-                desglose por comercial (ventas_hugo + ventas_martin, que suman
-                exactamente esta columna) vive en Captación, que es donde se
-                mira quién cierra. */}
-            <KpiCard
-              className="lg:col-span-2"
-              label="Ventas"
-              value={formatNumber(getValueAtMonth(kpi, "ventas", activeMonth))}
-              mom={getMoMAtMonth(kpi, "ventas", activeMonth)}
-            />
-
-            {/* --- Fila 3 · MRR --- */}
+            {/* --- Fila 2 · MRR ---
+                Pedidos tenía esta fila y bajó a la de secundarias: es volumen,
+                no dinero, y arriba compite con las dos cifras que sí mandan
+                (ingresos y recurrente). AOV se fue con él —es el ticket DE esos
+                pedidos y sueltos no se leen—; Ventas se queda arriba porque es
+                el cierre del mes y cuadra con el embudo de ads. */}
             <KpiCard
               className="sm:col-span-2 lg:col-span-3"
               size="titular"
@@ -587,37 +807,6 @@ export default function ResumenPage() {
                   value: formatCurrency(getValueAtMonth(kpi, "MRR_net", activeMonth)),
                 },
               ]}
-            />
-            {/* "registro mensual" y no "(Sheet)" a secas: más abajo hay un
-                recuento EN VIVO de suscripciones, y decir de qué fuente sale
-                cada uno no alcanza — hay que decir QUÉ mide. Ésta es la del mes
-                elegido arriba, tal como quedó anotada en DB_KPI. */}
-            <KpiCard
-              className="lg:col-span-2"
-              label="Suscripciones activas · registro mensual"
-              value={formatNumber(suscActivas)}
-              mom={getMoMAtMonth(kpi, "suscripciones_activas", activeMonth)}
-              subValues={[
-                {
-                  label: "vs. mes anterior",
-                  value: formatNumberDelta(suscActivasDelta),
-                },
-              ]}
-              hint={
-                activeMonthEnCurso ? (
-                  <div>
-                    {activeMonth} está EN CURSO: el mes actual puede estar
-                    incompleto hasta que se registren todos los movimientos. Si
-                    un alumno todavía no renovó ni canceló, eso no está anotado
-                    aún — un número bajo acá no es una caída.
-                  </div>
-                ) : (
-                  <div>
-                    Columna suscripciones_activas de DB_KPI, del mes elegido
-                    arriba. Cuenta SUSCRIPCIONES de ese mes, no personas de hoy.
-                  </div>
-                )
-              }
             />
             {/* clientes_churn es una TASA (0.76 → "76%"), no un conteo.
                 Umbrales fijos (> 25% peligro · 20-25% mejorable · ≤ 20% bien)
@@ -642,6 +831,17 @@ export default function ResumenPage() {
                   limite={formatPercent(CHURN_LIMITE)}
                 />
               }
+            />
+            {/* "ventas" es el TOTAL del mes y cuadra con el embudo de ads
+                (CAC ≈ ads_captacion/ventas, CR_clientes ≈ ventas/leads). El
+                desglose por comercial (ventas_hugo + ventas_martin, que suman
+                exactamente esta columna) vive en Captación, que es donde se
+                mira quién cierra. */}
+            <KpiCard
+              className="lg:col-span-2"
+              label="Ventas"
+              value={formatNumber(getValueAtMonth(kpi, "ventas", activeMonth))}
+              mom={getMoMAtMonth(kpi, "ventas", activeMonth)}
             />
           </div>
 
@@ -786,16 +986,196 @@ export default function ResumenPage() {
             />
           </div>
 
-          {/* --- EN VIVO · suscripciones y alumnos activos AHORA ---
-              Va pegado a las tarjetas KPI y no al final de la página, y con el
-              panel del histórico inmediatamente debajo: son las dos mitades de
-              la misma pregunta y separadas por media página cualquiera de las
-              dos se leería como "el" número de suscripciones activas. Dos
-              paneles con título propio, y no dos tarjetas vecinas, para que se
-              vea de un vistazo que no es un dato duplicado. */}
+          {/* --- Fila 6 · Secundarias: volumen y registro mensual ---
+              Todas las de esta fila SIGUEN estando (ninguna se borró), pero
+              debajo de las principales y sin ninguna titular: son datos de
+              apoyo, no la lectura del negocio.
+
+              · Pedidos y AOV: volumen y ticket. Un pedido no es un cliente ni un
+                euro de recurrente, y en la primera pantalla se leían como si
+                fueran el titular del mes.
+              · Suscripciones activas del Sheet: es la MISMA pregunta que la
+                tarjeta en vivo de arriba pero con otra respuesta, y arriba,
+                pegadas, se leían como si una desmintiera a la otra. Acá está
+                lejos, etiquetada por lo que mide y con el pie diciendo en qué se
+                diferencia. No se borra porque es la única de las dos fuentes con
+                MESES PASADOS: WooCommerce no guarda el estado viejo de una
+                suscripción, así que el histórico sólo existe en esta columna. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <KpiCard
+              label="Pedidos"
+              value={formatNumber(pedidos)}
+              mom={getMoMAtMonth(kpi, "pedidos", activeMonth)}
+              subValues={[
+                { label: "vs. mes anterior", value: formatNumberDelta(pedidosDelta) },
+              ]}
+            />
+            <KpiCard
+              label="AOV"
+              value={formatCurrency(getValueAtMonth(kpi, "AOV", activeMonth))}
+              mom={getMoMAtMonth(kpi, "AOV", activeMonth)}
+            />
+            {/* "según registro mensual" y no "(Sheet)" a secas: arriba hay un
+                recuento EN VIVO de suscripciones, y decir de qué fuente sale
+                cada uno no alcanza — hay que decir QUÉ mide. Ésta es la del mes
+                elegido en el desplegable, tal como quedó anotada en DB_KPI. */}
+            <KpiCard
+              label="Suscripciones activas · según registro mensual"
+              value={formatNumber(suscActivas)}
+              mom={getMoMAtMonth(kpi, "suscripciones_activas", activeMonth)}
+              subValues={[
+                {
+                  label: "vs. mes anterior",
+                  value: formatNumberDelta(suscActivasDelta),
+                },
+              ]}
+              hint={
+                <>
+                  {activeMonthEnCurso ? (
+                    <div>
+                      {activeMonth} está EN CURSO: el mes actual puede estar
+                      incompleto hasta que se registren todos los movimientos. Si
+                      un alumno todavía no renovó ni canceló, eso no está anotado
+                      aún — un número bajo acá no es una caída.
+                    </div>
+                  ) : (
+                    <div>
+                      Columna suscripciones_activas de DB_KPI, del mes elegido
+                      arriba.
+                    </div>
+                  )}
+                  <div>
+                    NO es la tarjeta «Suscripciones activas (en vivo)» del
+                    principio de la página: acá hay SUSCRIPCIONES anotadas mes a
+                    mes, allá PERSONAS con acceso hoy. Ésta es la única de las
+                    dos que tiene meses pasados.
+                  </div>
+                </>
+              }
+            />
+          </div>
+
+          {/* --- MISMO TRAMO DEL MES, MES CONTRA MES ---
+              El primer panel de la página porque responde la pregunta que trae
+              casi todo el que la abre —"¿vamos mejor que el mes pasado?"— y la
+              responde SIN el sesgo del MoM de las tarjetas, que compara un mes a
+              medio hacer contra uno cerrado y hace perder al actual por el solo
+              hecho de que todavía no terminó. Ver la nota de tramoActual. */}
           <Panel
-            title="Suscripciones y alumnos activos ahora (en vivo)"
-            description="Dato actual desde WooCommerce, no tiene historial: es una foto del PRESENTE y NO cambia con el desplegable de mes de arriba. WooCommerce no guarda el estado viejo de una suscripción, así que no hay forma de saber cuántas había activas en un mes pasado — ese histórico sale del Sheet y está en el panel de abajo. Un alumno cuenta como activo si tiene suscripción de WooCommerce vigente, activación manual en curso o es de Oritalk: la misma regla que decide si puede entrar a clase."
+            title={`Mismo tramo del mes · ${METRICA_TRAMO_LABEL.toLowerCase()}`}
+            description={
+              tramoActual && tramoPrevio
+                ? `Lo que va del mes contra el MISMO tramo de días del mes anterior: ${etiquetaTramoActual} contra ${etiquetaTramoPrevio}. Cada línea es el acumulado del mes desde su día 1, y el eje es el día del mes, no la fecha — la de arriba es la que va ganando.`
+                : "Lo que va del mes contra el mismo tramo de días del mes anterior, con el acumulado día a día de los dos."
+            }
+          >
+            {!tramoActual ? (
+              <EmptyState label='Sin datos en la hoja "KPI Diario"' />
+            ) : sinTramoPrevio ? (
+              <EmptyState
+                label={`El histórico diario no llega a ${etiquetaTramoPrevio}: no hay tramo anterior contra el que comparar`}
+              />
+            ) : (
+              <>
+                {/* Los dos totales antes del gráfico: el gráfico dice cómo se
+                    llegó hasta acá, pero quién va ganando tiene que poder leerse
+                    sin interpretar una curva. El badge lleva el tramo contra el
+                    que compara pegado, igual que en la página diaria. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                  <KpiCard
+                    size="titular"
+                    label={`${METRICA_TRAMO_LABEL} · ${etiquetaTramoActual}`}
+                    value={formatNumber(totalTramoActual)}
+                    mom={momTramo}
+                    momDelta={deltaTramo}
+                    period={`vs. ${etiquetaTramoPrevio}`}
+                    semaforo={
+                      deltaTramo === null
+                        ? "neutral"
+                        : deltaTramo >= 0
+                          ? "green"
+                          : "red"
+                    }
+                  />
+                  <KpiCard
+                    label={`${METRICA_TRAMO_LABEL} · ${etiquetaTramoPrevio}`}
+                    value={formatNumber(totalTramoPrevio)}
+                    hint="El mismo tramo de días del mes anterior. Es la referencia contra la que se compara, no el total de ese mes."
+                  />
+                </div>
+
+                <MultiTrendChart
+                  data={filasTramo}
+                  /* El eje X es el DÍA DEL MES (1, 2, 3…), que es lo que hace
+                     que las dos series se puedan superponer: con fechas, julio
+                     y agosto irían uno detrás del otro. minTickGap alto para que
+                     recharts saltee ticks en vez de apretar 31 etiquetas. */
+                  xKey="dia"
+                  xMinTickGap={18}
+                  legendInSeriesOrder
+                  series={[
+                    {
+                      key: "actual",
+                      label: etiquetaTramoActual,
+                      color: CAT.verde,
+                    },
+                    {
+                      key: "previo",
+                      label: etiquetaTramoPrevio,
+                      color: NEUTRO.gris,
+                    },
+                  ]}
+                  valueFormatter={(v) => formatNumber(v)}
+                />
+
+                {/* Los cortes 29-31 no existen en todos los meses: addMonths ya
+                    hace clamp, pero un total sobre 31 días contra otro sobre 28
+                    no es un empate justo y hay que decirlo en vez de dejarlo en
+                    la letra pequeña de las fechas. */}
+                {tramosDeDistintoLargo && (
+                  <div className="mt-4">
+                    <Aviso titulo="Los dos tramos NO miden los mismos días">
+                      El mes anterior se quedó sin días antes de llegar al día{" "}
+                      {tramoActual.corte}: {etiquetaTramoPrevio} son{" "}
+                      {tramoPrevio.corte} días contra {tramoActual.corte} de{" "}
+                      {etiquetaTramoActual}. El total de este mes juega con{" "}
+                      {tramoActual.corte - tramoPrevio.corte}{" "}
+                      {tramoActual.corte - tramoPrevio.corte === 1
+                        ? "día"
+                        : "días"}{" "}
+                      de ventaja, y la línea gris del gráfico termina antes por el
+                      mismo motivo.
+                    </Aviso>
+                  </div>
+                )}
+
+                <p className="mt-4 text-[11px] text-drc-ink-soft">
+                  Columna <strong>{METRICA_TRAMO}</strong> de la hoja «KPI
+                  Diario», la única con granularidad de día (DB_KPI sólo tiene el
+                  total del mes y no se puede cortar por día). Son las{" "}
+                  <strong>altas</strong>: los clientes que compran por primera
+                  vez, sin los recurrentes. El corte lo pone el último día CON
+                  FILA en la hoja, no el reloj, para que un Sheet atrasado no
+                  meta días vacíos de un solo lado.
+                </p>
+              </>
+            )}
+          </Panel>
+
+          {/* --- EN VIVO · DESGLOSE de los activos y de las suscripciones ---
+              Las dos cifras de este recuento (activos y suscripciones) subieron
+              al principio de la página: son las que se buscan al abrir y no
+              podían estar a media pantalla de scroll. Acá se queda el DESGLOSE,
+              que es lo que sí necesita el espacio de un panel — por dónde entra
+              el acceso y en qué estado están las suscripciones de Woo.
+
+              Sigue inmediatamente encima del panel del histórico a propósito:
+              son las dos mitades de la misma pregunta, y separadas por media
+              página cualquiera de las dos se leería como "el" número de
+              suscripciones activas. */}
+          <Panel
+            title="Desglose del recuento en vivo"
+            description="Cómo se reparten los alumnos activos de arriba según por dónde les entra el acceso, y en qué estado están las suscripciones de WooCommerce. Foto del PRESENTE, sin historial: no cambia con el desplegable de mes. WooCommerce no guarda el estado viejo de una suscripción, así que no hay forma de saber cuántas había activas en un mes pasado — ese histórico sale del Sheet y está en el panel de abajo. Un alumno cuenta como activo si tiene suscripción de WooCommerce vigente, activación manual en curso o es de Oritalk: la misma regla que decide si puede entrar a clase."
           >
             {suscLoading && !susc && (
               <div className="text-sm text-drc-ink-soft">
@@ -811,87 +1191,10 @@ export default function ResumenPage() {
 
             {susc && (
               <div className="space-y-4">
-                {/* Woo caído NO vacía la sección: las activaciones manuales y
-                    Oritalk salen de la base del otro lado y siguen siendo
-                    válidas. Sólo se cae lo que depende de WooCommerce. */}
-                {wooCaido && (
-                  <Aviso titulo="Sin conexión con WooCommerce">
-                    DRC Gestión no pudo leer las suscripciones
-                    {susc.woocommerce.error ? ` (${susc.woocommerce.error})` : ""}
-                    , así que el total de activos y los que entran por suscripción
-                    quedan en «—». Los activados a mano y los de Oritalk sí se
-                    muestran: salen de su base y no dependen de WooCommerce. No
-                    son ceros, es un dato que falta.
-                  </Aviso>
-                )}
-
-                {/* Dos tarjetas, y las dos del MISMO recuento en vivo a dos
-                    alturas: el total y el trozo que hace MRR. Acá había una
-                    tercera, del Sheet y atada al desplegable de mes: dentro de
-                    un panel titulado "ahora" cambiaba al mover el mes y hacía
-                    leer el bloque entero como si respondiera al desplegable.
-                    Se fue al panel del histórico, que es de donde sale. */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <KpiCard
-                    label="Alumnos activos (total)"
-                    value={formatNumber(activosLive)}
-                    subValues={[
-                      {
-                        label: "Alumnos en el sistema",
-                        value: formatNumber(susc.alumnos.en_base),
-                      },
-                      {
-                        label: "Inactivos",
-                        value: formatNumber(susc.alumnos.inactivos),
-                      },
-                    ]}
-                    hint="Cuenta PERSONAS con acceso hoy, por cualquiera de los tres orígenes (suscripción, activación manual u Oritalk). Es el mismo número que decide quién puede entrar a clase. NO todas facturan como MRR."
-                  />
-                  {/* El sub-valor "sin suscripción" va acá y no en la tarjeta
-                      del total a propósito: es la resta que explica por qué este
-                      número es menor, y puesto al lado se lee solo. Además
-                      sobrevive a Woo caído, así que la tarjeta sigue diciendo
-                      algo aunque el valor principal quede en «—». */}
-                  <KpiCard
-                    label="Suscripciones activas ahora (en vivo)"
-                    value={formatNumber(conSuscripcionLive)}
-                    subValues={[
-                      {
-                        label: "Activos sin suscripción",
-                        value: formatNumber(sinSuscripcionLive),
-                      },
-                    ]}
-                    hint={
-                      <>
-                        <div>
-                          Alumnos con una suscripción de WooCommerce vigente HOY:
-                          el subconjunto del total que factura de forma
-                          recurrente y compone el MRR.
-                        </div>
-                        <div>
-                          Dato actual desde WooCommerce, no tiene historial: no
-                          cambia con el desplegable de mes
-                          {activeMonth ? ` (ahora ${activeMonth})` : ""}. El mes
-                          a mes está en el panel de abajo.
-                        </div>
-                      </>
-                    }
-                  />
-                </div>
-
-                {/* La aclaración va siempre y no como tooltip: que un alumno
-                    activo no genere MRR es contraintuitivo, y nadie va a pasar
-                    el ratón por encima de un número que cree entender. */}
-                <p className="text-[11px] text-drc-ink-soft">
-                  Las dos tarjetas salen del mismo recuento en vivo y{" "}
-                  <strong>una está dentro de la otra</strong>: las suscripciones
-                  son el trozo del total que paga por WooCommerce. Los alumnos con{" "}
-                  <strong>acceso manual (plan de empresa o alta a mano) o de
-                  Oritalk</strong>{" "}
-                  están activos y reciben clases, pero no generan MRR vía
-                  suscripción de WooCommerce: facturan por otra vía o no facturan
-                  directamente en Woo, así que no entran en el recurrente.
-                </p>
+                {/* El aviso de "Woo caído" NO se repite acá: ya está arriba, en
+                    el bloque en vivo, y dos veces en la misma página se lee como
+                    dos incidencias distintas. Lo que Woo se lleva puesto en este
+                    panel lo dice cada mitad con su propio EmptyState. */}
 
                 {/* Las dos columnas van en `flex flex-col` + `flex-1` y no en
                     un div a secas: EmptyState se estira con `h-full`, y dentro
