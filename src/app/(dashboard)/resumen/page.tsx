@@ -306,7 +306,7 @@ export default function ResumenPage() {
    * LAS DOS FUENTES, porque se parecen y no son lo mismo:
    *
    *   · WooCommerce, vía `/api/subscriptions` (`alumnos.activos` y
-   *     `alumnos.por_origen.suscripcion`) — FOTO DEL PRESENTE. No lleva
+   *     `woocommerce.por_estado.active`) — FOTO DEL PRESENTE. No lleva
    *     parámetro de mes y no puede llevarlo: cuando una suscripción cambia de
    *     estado, el estado viejo NO queda registrado en ningún lado, así que no
    *     hay forma de saber cuántas había activas en marzo. Atarlo al desplegable
@@ -341,17 +341,16 @@ export default function ResumenPage() {
   const activosLive = susc?.alumnos.activos ?? null;
 
   /**
-   * ACTIVOS ≠ LOS QUE HACEN MRR. Son dos métricas distintas y el endpoint las
-   * manda por separado:
-   *   · `alumnos.activos`                  → TODOS los que tienen acceso hoy.
-   *   · `por_origen.suscripcion`           → sólo los que pagan una suscripción
-   *                                          de WooCommerce, que es lo que
-   *                                          compone el MRR recurrente.
-   * El resto (manual + Oritalk) recibe clases pero no factura por Woo, así que
-   * está DENTRO del total y FUERA del MRR. Sin separarlo, cualquiera lee el
-   * total como si todo eso fuese recurrente.
+   * `por_origen.suscripcion` (las PERSONAS de nuestra base con suscripción
+   * vigente: 133 hoy) ya no se muestra en la tarjeta de arriba — la decisión de
+   * Facundo del 01/09/2026 fue que ese titular sea el recuento crudo de
+   * WooCommerce, que es contra el que se cuadra.
+   *
+   * El número NO desaparece de la página: sigue siendo el trozo "Suscripción de
+   * WooCommerce" de la dona del panel de abajo, que es donde reparte el total de
+   * alumnos activos entre sus tres orígenes. Ahí sí está en su unidad —personas—
+   * y junto a las otras dos porciones, que es lo que le da sentido.
    */
-  const conSuscripcionLive = susc?.alumnos.por_origen.suscripcion ?? null;
 
   /**
    * Los activos que NO entran en el MRR. Se suma acá porque el otro lado no
@@ -717,52 +716,54 @@ export default function ResumenPage() {
                   </>
                 }
               />
-              {/* El sub-valor "sin suscripción" va acá y no en la tarjeta del
-                  total a propósito: es la resta que explica por qué este número
-                  es menor, y puesto al lado se lee solo. Además sobrevive a Woo
-                  caído, así que la tarjeta sigue diciendo algo aunque el valor
-                  principal quede en «—». */}
+              {/* Los alumnos sin suscripción van de sub-valor acá y no en la
+                  tarjeta del total: es a esta tarjeta a la que le falta ese
+                  trozo del negocio —lo que entra sin suscripción de Woo—, y sin
+                  él el titular se lee como si fuera todo lo que se cobra.
+                  Además sobrevive a Woo caído (sale de la base del otro lado),
+                  así que la tarjeta sigue diciendo algo aunque el titular quede
+                  en «—». */}
               <KpiCard
                 size="titular"
-                /* "Personas con acceso" y no "Suscripciones activas": el título
-                   viejo nombraba la UNIDAD EQUIVOCADA. Contaba personas y se
-                   llamaba igual que el filtro "Activas" del admin de Woo, que
-                   cuenta suscripciones, así que invitaba a comparar dos números
-                   que no miden lo mismo y a leer la diferencia como un error. */
-                label="Personas con acceso por suscripción (en vivo)"
-                value={formatNumber(conSuscripcionLive)}
+                /* EL TITULAR ES EL CRUDO DE WOOCOMMERCE (decisión de Facundo,
+                   01/09/2026). Antes eran las personas de nuestra base con
+                   suscripción vigente (133), que es un número más elaborado
+                   —descuenta huérfanas y duplicadas— pero que no se puede cuadrar
+                   contra ninguna pantalla: al lado del filtro "Activas" de Woo no
+                   daba igual, y esa diferencia se leía como un error del
+                   dashboard. Ahora el titular es exactamente lo que Woo enseña,
+                   y las personas viven en la dona del panel de abajo.
+
+                   Ojo con la UNIDAD, que cambió con el número: esta tarjeta ya
+                   NO cuenta lo mismo que la de al lado. Ver el pie de las dos. */
+                label="Suscripciones activas (en vivo)"
+                value={formatNumber(wooActivas)}
                 subValues={[
-                  /* El crudo de Woo nombra su unidad en la propia etiqueta
-                     ("Suscripciones") frente al titular, que nombra la suya
-                     ("Personas"). Es lo único que impide leer 127 y 133 como el
-                     mismo dato mal contado. */
-                  {
-                    label: "Suscripciones activas en WooCommerce",
-                    value: formatNumber(wooActivas),
-                  },
                   /* "Pago único y accesos manuales" y no "pago único" a secas:
                      de los 40 de hoy, 21 son de pago único, 13 no tienen tipo
                      de producto, 3 tienen suscripción pero entran por una
                      activación manual, y 3 son de Oritalk. Llamarlos a todos
-                     pago único sería inventar el origen de la mitad. */
+                     pago único sería inventar el origen de la mitad.
+
+                     Y son PERSONAS, no suscripciones: por eso la etiqueta dice
+                     "alumnos" y no se resta del titular. */
                   {
-                    label: "Pago único y accesos manuales",
+                    label: "Alumnos de pago único y acceso manual",
                     value: formatNumber(sinSuscripcionLive),
                   },
                 ]}
                 hint={
                   <>
-                    {/* Dos líneas y no cuatro: con "Personas" en el titular y
-                        "Suscripciones" en la etiqueta de abajo, las unidades ya
-                        están dichas donde se leen los números. El pie sólo tiene
-                        que decir que no cuadran a propósito y dónde está el
-                        desglose. */}
+                    {/* Dos líneas y no cuatro: las unidades van dichas en las
+                        propias etiquetas ("Suscripciones" arriba, "Alumnos"
+                        abajo), así que el pie sólo tiene que confirmarlo y decir
+                        dónde está el desglose. */}
                     <div>
-                      El titular cuenta <strong>PERSONAS</strong> con acceso hoy;
-                      la línea de WooCommerce cuenta{" "}
-                      <strong>SUSCRIPCIONES</strong>, tal cual su filtro
-                      «Activas». No tienen por qué coincidir — el desglose por
-                      estado está en el panel de más abajo.
+                      Cuenta <strong>SUSCRIPCIONES</strong> de WooCommerce, tal
+                      cual su filtro «Activas»: es el número que se cuadra contra
+                      el admin de Woo. La línea de abajo son{" "}
+                      <strong>ALUMNOS</strong>, otra unidad — no se resta de éste.
+                      El desglose por estado está en el panel de más abajo.
                     </div>
                     <div>
                       Foto del PRESENTE: no cambia con el desplegable de mes. El
@@ -778,14 +779,16 @@ export default function ResumenPage() {
                 encima de un número que cree entender. */}
             <p className="text-[11px] text-drc-ink-soft">
               Las dos tarjetas salen del mismo recuento en vivo del{" "}
-              {susc.today_madrid} (hora de España) y{" "}
-              <strong>una está dentro de la otra</strong>: las personas con
-              suscripción son el trozo del total que paga por WooCommerce. Los alumnos con{" "}
+              {susc.today_madrid} (hora de España), pero{" "}
+              <strong>no cuentan lo mismo</strong>: a la izquierda ALUMNOS con
+              acceso, a la derecha SUSCRIPCIONES de WooCommerce. No se restan
+              entre sí — una persona puede tener dos suscripciones a la vez, y
+              los alumnos con{" "}
               <strong>
                 acceso manual (plan de empresa o alta a mano) o de Oritalk
               </strong>{" "}
-              están activos y reciben clases, pero no generan MRR vía suscripción
-              de WooCommerce.
+              están activos y reciben clases sin ninguna suscripción, así que no
+              generan MRR vía WooCommerce.
             </p>
           </>
         )}
@@ -1125,10 +1128,11 @@ export default function ResumenPage() {
                     </div>
                   )}
                   <div>
-                    NO es la tarjeta «Personas con acceso por suscripción» del
-                    principio de la página: acá hay SUSCRIPCIONES anotadas mes a
-                    mes, allá PERSONAS con acceso hoy. Ésta es la única de las
-                    dos que tiene meses pasados.
+                    NO es la tarjeta «Suscripciones activas (en vivo)» del
+                    principio de la página. Las dos cuentan suscripciones, pero
+                    de fuentes y momentos distintos: acá lo anotado en el Sheet
+                    mes a mes, allá lo que WooCommerce contesta HOY. Ésta es la
+                    única de las dos que tiene meses pasados.
                   </div>
                 </>
               }
@@ -1459,12 +1463,11 @@ export default function ResumenPage() {
                 activas hay" ya vio el número en vivo, y lo que necesita saber es
                 por qué no coincide. */}
             <p className="mt-4 text-[11px] text-drc-ink-soft">
-              No tiene por qué coincidir con «Personas con acceso por suscripción» del
-              panel de arriba, y si coincide es casualidad: acá hay{" "}
-              <strong>suscripciones anotadas mes a mes</strong> y allá{" "}
-              <strong>personas con acceso hoy</strong>. Una persona puede tener
-              más de una suscripción, y una activación manual o de Oritalk no
-              tiene ninguna.
+              No tiene por qué coincidir con «Suscripciones activas (en vivo)»
+              del panel de arriba, y si coincide es casualidad: acá hay{" "}
+              <strong>lo anotado en el Sheet mes a mes</strong> y allá{" "}
+              <strong>lo que WooCommerce contesta hoy</strong>. Misma unidad, dos
+              fuentes y dos momentos distintos.
             </p>
           </Panel>
 
