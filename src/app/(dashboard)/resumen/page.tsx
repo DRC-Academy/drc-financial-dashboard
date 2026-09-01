@@ -366,27 +366,26 @@ export default function ResumenPage() {
       : susc.alumnos.por_origen.manual.total + susc.alumnos.por_origen.oritalk;
 
   /**
-   * LOS DOS RECUENTOS CRUDOS DE WOOCOMMERCE, en la tarjeta y no sólo en el panel
-   * de abajo.
+   * EL RECUENTO CRUDO DE WOOCOMMERCE, en la tarjeta y no sólo en el panel de
+   * abajo.
    *
-   * No son otra versión del número principal: son OTRA UNIDAD. El principal
-   * cuenta PERSONAS de nuestra base; éstos cuentan SUSCRIPCIONES, tal cual las
-   * agrupa el admin de WooCommerce en sus filtros. Estaban ya en la página, pero
-   * a media pantalla de distancia, y esa distancia es justo la que hacía que
-   * alguien comparara el 133 de la tarjeta contra el filtro "Activas" de Woo y
-   * concluyera que el dashboard estaba mal. Puestos dentro de la misma tarjeta,
-   * la comparación se hace sola y con la etiqueta delante.
+   * No es otra versión del número principal: es OTRA UNIDAD. El principal cuenta
+   * PERSONAS de nuestra base; éste cuenta SUSCRIPCIONES, tal cual las agrupa el
+   * admin de WooCommerce en su filtro "Activas". Ya estaba en la página, pero a
+   * media pantalla de distancia, y esa distancia es justo la que hacía que
+   * alguien comparara el 133 de la tarjeta contra el filtro de Woo y concluyera
+   * que el dashboard estaba mal. Dentro de la misma tarjeta, la comparación se
+   * hace sola y con la etiqueta delante.
    *
-   * `pending-cancel` acompaña a `active` porque sin él la comparación vuelve a
-   * fallar en el otro sentido: son suscripciones que Woo NO llama activas y que
-   * sin embargo dan acceso hasta que se agota el ciclo pagado, así que entran en
-   * el número principal aunque no estén en el filtro "Activas".
+   * `pending-cancel` (las que dan acceso sin estar "activas") NO se muestra acá:
+   * se probó y sumaba una tercera unidad a una tarjeta que ya tenía dos. Vive en
+   * el panel "Suscripciones en WooCommerce" de más abajo, con el resto de los
+   * estados, que es donde se va a buscar por qué 127 y 133 no cuadran.
    *
-   * Los dos por wooPorEstado: con Woo caído el payload manda ceros que no
+   * Por wooPorEstado y no del payload: con Woo caído llegan ceros que no
    * significan cero (ver lib/suscripcionesHelpers).
    */
   const wooActivas = wooPorEstado(susc, "active");
-  const wooBajaPedida = wooPorEstado(susc, "pending-cancel");
 
   const motivoSinMargenReal: string | null = !serieProfes
     ? "Sin respuesta de DRC Gestión: no hay margen real que mostrar. El resto de la página lee del Sheet y no se ve afectado."
@@ -733,51 +732,41 @@ export default function ResumenPage() {
                 label="Personas con acceso por suscripción (en vivo)"
                 value={formatNumber(conSuscripcionLive)}
                 subValues={[
+                  /* El crudo de Woo nombra su unidad en la propia etiqueta
+                     ("Suscripciones") frente al titular, que nombra la suya
+                     ("Personas"). Es lo único que impide leer 127 y 133 como el
+                     mismo dato mal contado. */
                   {
-                    label: "Activos sin suscripción",
-                    value: formatNumber(sinSuscripcionLive),
-                  },
-                  /* Las dos crudas de Woo van con el prefijo "Según
-                     WooCommerce" y no con un nombre propio: el prefijo es lo
-                     que avisa de que cambian de fuente Y de unidad respecto de
-                     las dos líneas de arriba. */
-                  {
-                    label: "Según WooCommerce · activas",
+                    label: "Suscripciones activas en WooCommerce",
                     value: formatNumber(wooActivas),
                   },
+                  /* "Pago único y accesos manuales" y no "pago único" a secas:
+                     de los 40 de hoy, 21 son de pago único, 13 no tienen tipo
+                     de producto, 3 tienen suscripción pero entran por una
+                     activación manual, y 3 son de Oritalk. Llamarlos a todos
+                     pago único sería inventar el origen de la mitad. */
                   {
-                    label: "Según WooCommerce · con baja pedida",
-                    value: formatNumber(wooBajaPedida),
+                    label: "Pago único y accesos manuales",
+                    value: formatNumber(sinSuscripcionLive),
                   },
                 ]}
                 hint={
                   <>
+                    {/* Dos líneas y no cuatro: con "Personas" en el titular y
+                        "Suscripciones" en la etiqueta de abajo, las unidades ya
+                        están dichas donde se leen los números. El pie sólo tiene
+                        que decir que no cuadran a propósito y dónde está el
+                        desglose. */}
                     <div>
-                      PERSONAS de nuestra base con una suscripción de WooCommerce
-                      vigente HOY: el subconjunto del total que factura de forma
-                      recurrente y compone el MRR.
+                      El titular cuenta <strong>PERSONAS</strong> con acceso hoy;
+                      la línea de WooCommerce cuenta{" "}
+                      <strong>SUSCRIPCIONES</strong>, tal cual su filtro
+                      «Activas». No tienen por qué coincidir — el desglose por
+                      estado está en el panel de más abajo.
                     </div>
                     <div>
-                      Las dos líneas «según WooCommerce» cuentan{" "}
-                      <strong>SUSCRIPCIONES, no personas</strong>, y sin
-                      descontar nada: son los números que se ven en los filtros
-                      del admin de Woo, para poder comparar sin traducir. NO
-                      tienen por qué coincidir con el de arriba — hay quien tiene
-                      dos suscripciones a la vez y suscripciones que pagan sin
-                      corresponder a ningún alumno de la base.
-                    </div>
-                    <div>
-                      «Con baja pedida» (pending-cancel) queda FUERA del filtro
-                      «Activas» de Woo y sin embargo SÍ da acceso hasta que se
-                      agota el ciclo pagado, así que esos alumnos sí cuentan
-                      arriba. El desglose por estado y los descuadres están en el
-                      panel «Suscripciones en WooCommerce», más abajo.
-                    </div>
-                    <div>
-                      Foto del PRESENTE, sin historial: no cambia con el
-                      desplegable de mes. El mes a mes NO es éste — sale del
-                      Sheet y está más abajo, etiquetado «según registro
-                      mensual».
+                      Foto del PRESENTE: no cambia con el desplegable de mes. El
+                      mes a mes sale del Sheet, más abajo.
                     </div>
                   </>
                 }
@@ -791,9 +780,7 @@ export default function ResumenPage() {
               Las dos tarjetas salen del mismo recuento en vivo del{" "}
               {susc.today_madrid} (hora de España) y{" "}
               <strong>una está dentro de la otra</strong>: las personas con
-              suscripción son el trozo del total que paga por WooCommerce. Los
-              dos valores «según WooCommerce» de esa tarjeta son de otra unidad
-              —suscripciones— y no se restan de nada de esta frase. Los alumnos con{" "}
+              suscripción son el trozo del total que paga por WooCommerce. Los alumnos con{" "}
               <strong>
                 acceso manual (plan de empresa o alta a mano) o de Oritalk
               </strong>{" "}
