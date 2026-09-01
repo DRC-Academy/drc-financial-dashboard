@@ -5,13 +5,15 @@ import clsx from "clsx";
 import { EmptyState } from "./EmptyState";
 import { ParcialBadge } from "./ParcialBadge";
 import { VentanaDudosaBadge } from "./VentanaDudosaBadge";
-import { formatCurrency, formatNumber } from "@/lib/kpiHelpers";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/kpiHelpers";
 import {
   avisoDudosasDe,
   avisoParcialDe,
   detalleDudosasDe,
   facturacionDe,
   margenDe,
+  margenPctDe,
+  margenSobreFacturacion,
   ventanasDudosasDe,
 } from "@/lib/profesoresHelpers";
 import type { MetricValue } from "@/types/kpi";
@@ -41,6 +43,14 @@ type SortKey =
   | "total_amount"
   | "facturacion"
   | "margen"
+  /**
+   * Margen en proporción. Es una columna ordenable APARTE de "margen" y no un
+   * adorno de esa celda porque responde a otra pregunta: "margen" ordena por
+   * quién deja más dinero y "margen_pct" por quién rinde mejor, y los dos
+   * órdenes no coinciden — el profesor con más margen en € suele ser el que más
+   * alumnos tiene, no el más rentable.
+   */
+  | "margen_pct"
   | "status"
   | "is_active";
 
@@ -130,6 +140,21 @@ function ImporteCell({
   );
 }
 
+/**
+ * Celda de porcentaje. SIN semáforo a propósito, aunque su signo signifique lo
+ * mismo que el de la columna de al lado: el margen en € ya va en verde o rojo, y
+ * repetir el color en la celda pegada duplica el aviso y le quita jerarquía al
+ * dato principal. Acá el gris dice "esto es el mismo margen, mirado en
+ * proporción", que es justo lo que es.
+ */
+function PctCell({ value }: { value: MetricValue }) {
+  return (
+    <td className="py-2 tabular text-right text-drc-ink-soft">
+      {formatPercent(value)}
+    </td>
+  );
+}
+
 const SELECT_CLASS =
   "rounded-lg border border-drc-line bg-white px-2.5 py-1 text-xs text-drc-ink";
 
@@ -143,6 +168,7 @@ function SortableTh({
   columna,
   children,
   align = "left",
+  className,
   sortKey,
   sortDir,
   onSort,
@@ -150,6 +176,8 @@ function SortableTh({
   columna: SortKey;
   children: React.ReactNode;
   align?: "left" | "right" | "center";
+  /** Ajustes puntuales de separación. Ver el pl-4 de la columna Estado. */
+  className?: string;
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (key: SortKey) => void;
@@ -162,7 +190,8 @@ function SortableTh({
         "py-2 font-medium",
         align === "right" && "text-right",
         align === "center" && "text-center",
-        align === "left" && "text-left pr-4"
+        align === "left" && "text-left pr-4",
+        className
       )}
     >
       <button
@@ -200,7 +229,7 @@ function FilaDudosas({ teacher, id }: { teacher: TeacherPayout; id: string }) {
 
   return (
     <tr id={id} className="border-b border-drc-line/60 bg-drc-blue/5">
-      <td colSpan={7} className="px-2 py-2 text-[11px] text-drc-ink-soft">
+      <td colSpan={8} className="px-2 py-2 text-[11px] text-drc-ink-soft">
         <div className="font-medium text-drc-blue">
           Ventanas de facturación en duda — su importe está sumado, pero puede
           estar contado en el mes de al lado.
@@ -282,8 +311,14 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
         case "is_active":
           return signo * (Number(a.is_active) - Number(b.is_active));
         case "facturacion":
-        case "margen": {
-          const leer = sortKey === "facturacion" ? facturacionDe : margenDe;
+        case "margen":
+        case "margen_pct": {
+          const leer =
+            sortKey === "facturacion"
+              ? facturacionDe
+              : sortKey === "margen"
+                ? margenDe
+                : margenPctDe;
           const va = leer(a);
           const vb = leer(b);
           // Los "sin dato" van SIEMPRE al final, se ordene ascendente o
@@ -327,6 +362,18 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
   };
   const totalFacturacion = sumaConDato(facturacionDe);
   const totalMargen = sumaConDato(margenDe);
+  /**
+   * El % del pie sale de los DOS totales, no de promediar los porcentajes de
+   * las filas: promediarlos le daría el mismo peso al profesor de 80 € que al
+   * de 3.000 €, y el número dejaría de ser el margen del conjunto.
+   *
+   * Como las dos sumas recorren exactamente las mismas filas (las que tienen
+   * precio resuelto), el cociente es consistente con lo que se ve arriba.
+   */
+  const totalMargenPct = margenSobreFacturacion(
+    totalMargen.total,
+    totalFacturacion.total
+  );
   const tituloPie = (conDato: number) =>
     `Suma de ${formatNumber(conDato)} de ${formatNumber(
       filas.length
@@ -412,7 +459,14 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
               <SortableTh columna="margen" align="right" {...orden}>
                 Margen
               </SortableTh>
-              <SortableTh columna="status" {...orden}>
+              <SortableTh columna="margen_pct" align="right" {...orden}>
+                Margen %
+              </SortableTh>
+              {/* pl-4: con "Margen %" al lado —una cabecera bastante más ancha
+                  que sus valores— "Estado" quedaba pegado a su flecha de orden.
+                  El padding va en la cabecera Y en las celdas para que la
+                  columna entera se mueva junta. */}
+              <SortableTh columna="status" className="pl-4" {...orden}>
                 Estado
               </SortableTh>
               <SortableTh columna="is_active" align="center" {...orden}>
@@ -456,7 +510,8 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
                     {/* El margen sí lleva semáforo: es la única columna con un
                         signo que significa algo (ganamos o perdemos con él). */}
                     <ImporteCell value={margenDe(t)} semaforo />
-                    <td className="py-2 pr-4">
+                    <PctCell value={margenPctDe(t)} />
+                    <td className="py-2 pl-4 pr-4">
                       <EstadoBadge status={t.status} />
                     </td>
                     <td className="py-2 text-center">
@@ -473,7 +528,7 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
             })}
             {filas.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-6 text-center text-drc-ink-soft">
+                <td colSpan={8} className="py-6 text-center text-drc-ink-soft">
                   Ningún profesor cumple los filtros aplicados.
                 </td>
               </tr>
@@ -505,6 +560,12 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
               >
                 {formatCurrency(totalMargen.total)}
               </td>
+              <td
+                className="py-2 tabular text-right text-drc-ink-soft"
+                title={tituloPie(totalMargen.filas)}
+              >
+                {formatPercent(totalMargenPct)}
+              </td>
               <td className="py-2" />
               <td className="py-2" />
             </tr>
@@ -520,8 +581,8 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
         <p className="text-[11px] text-drc-ink-soft">
           El pie sólo puede sumar las {formatNumber(totalMargen.filas)} filas con
           precio de plan resuelto (de {formatNumber(filas.length)}). Por eso su
-          Margen es mayor que el de la tarjeta «Margen total» de arriba, que
-          descuenta además lo que se paga a los profesores sin facturación
+          Margen —y su %— es mayor que el de la tarjeta «Margen total» de arriba,
+          que descuenta además lo que se paga a los profesores sin facturación
           conocida.
         </p>
       )}

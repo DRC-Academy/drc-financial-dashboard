@@ -73,6 +73,56 @@ export function margenTotalDe(mes: PayoutsMonth): MetricValue {
 }
 
 /**
+ * MARGEN SOBRE FACTURACIÓN — la misma resta de arriba, pero en proporción.
+ *
+ * Devuelve una FRACCIÓN (0,68), no puntos: es lo que espera `formatPercent`,
+ * que multiplica por 100 al pintar. Si esto devolviera 68 ya multiplicado, la
+ * tarjeta mostraría "6.800%" y el error no salta a la vista en revisión.
+ *
+ * Tres casos dan null, y los tres son "no se sabe", nunca 0%:
+ *
+ *   · margen null      → no hay ni un alumno priceado. No hay nada que dividir.
+ *   · facturación null → lo mismo visto desde el otro lado (ver facturacionDe:
+ *                        el payload manda 0 queriendo decir "sin datos").
+ *   · facturación 0    → sí se sabe que factura 0 € —todos sus alumnos de pago
+ *                        único están fuera de ventana este mes—, pero el
+ *                        cociente no existe. Dividir daría −Infinity, y
+ *                        redondearlo a "0%" diría que se queda con el 0% de lo
+ *                        que factura cuando lo que pasa es que se le paga sin
+ *                        que entre nada. El "—" manda a mirar el € de al lado,
+ *                        que es donde está el número que importa.
+ *
+ * Se exporta suelta y no sólo envuelta en los dos helpers de abajo porque el
+ * pie de la tabla la necesita sobre SUS sumas (las de las filas visibles con
+ * precio resuelto), que no son las del mes.
+ */
+export function margenSobreFacturacion(
+  margen: MetricValue,
+  facturacion: MetricValue
+): MetricValue {
+  if (margen === null || facturacion === null || facturacion === 0) return null;
+  return margen / facturacion;
+}
+
+/** Margen / facturación de un profesor, en fracción. null si no se puede. */
+export function margenPctDe(t: TeacherPayout): MetricValue {
+  return margenSobreFacturacion(margenDe(t), facturacionDe(t));
+}
+
+/**
+ * Margen / facturación del MES entero, en fracción.
+ *
+ * Ojo: no es el promedio de los porcentajes de los profesores, es el cociente
+ * de los dos totales. Y el numerador descuenta TODO el gasto —también el de los
+ * profesores cuya facturación no se sabe—, así que sale más bajo que el del pie
+ * de la tabla. Es el mismo desajuste que ya tienen los importes en €, por el
+ * mismo motivo, y está explicado en el hint de las dos tarjetas de margen.
+ */
+export function margenPctTotalDe(mes: PayoutsMonth): MetricValue {
+  return margenSobreFacturacion(margenTotalDe(mes), facturacionTotalDe(mes));
+}
+
+/**
  * Aviso de dato incompleto para el MES entero, o null si no hay nada que
  * avisar. Es la versión agregada de avisoParcialDe: mismo criterio, misma
  * lectura ("es un mínimo, el real es igual o mayor"), pero del mes completo.

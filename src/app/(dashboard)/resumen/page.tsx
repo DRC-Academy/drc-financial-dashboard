@@ -42,6 +42,7 @@ import {
   AVISO_MESES_RETROACTIVOS,
   avisoParcialMes,
   facturacionTotalDe,
+  margenPctTotalDe,
   margenTotalDe,
 } from "@/lib/profesoresHelpers";
 import { VentanasDudosasNota } from "@/components/ui/VentanasDudosasNota";
@@ -283,13 +284,14 @@ export default function ResumenPage() {
   const margenReal = profesMes ? margenTotalDe(profesMes) : null;
   const facturacionReal = profesMes ? facturacionTotalDe(profesMes) : null;
   const avisoReal = profesMes ? avisoParcialMes(profesMes) : null;
-  // Margen sobre la facturación que pasa por profesores. Es lo ÚNICO que se
-  // deriva acá, y sólo con datos del propio endpoint: sirve para leer la
-  // tarjeta de al lado —que está en %— sin tener que dividir a ojo.
-  const margenRealPct =
-    margenReal !== null && facturacionReal !== null && facturacionReal !== 0
-      ? margenReal / facturacionReal
-      : null;
+  // Margen sobre la facturación que pasa por profesores: sirve para leer la
+  // tarjeta de al lado —que está en %— sin tener que dividir a ojo. Ya NO se
+  // calcula acá: la división vive en lib/profesoresHelpers, que es donde está
+  // el criterio de cuándo el cociente no existe (facturación 0 o sin precios),
+  // y ahora la comparten esta tarjeta, la de Profesores y la columna nueva de
+  // la tabla. Con la resta escrita en tres sitios, el día que cambie el
+  // criterio cambia en uno solo.
+  const margenRealPct = profesMes ? margenPctTotalDe(profesMes) : null;
 
   /**
    * POR QUÉ no hay margen real, o null si sí lo hay. Los cuatro motivos se

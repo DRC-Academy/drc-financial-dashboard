@@ -15,11 +15,13 @@ import {
   monthLabelToApiMonth,
   formatCurrency,
   formatNumber,
+  formatPercent,
 } from "@/lib/kpiHelpers";
 import { VentanasDudosasNota } from "@/components/ui/VentanasDudosasNota";
 import {
   AVISO_MESES_RETROACTIVOS,
   facturacionTotalDe,
+  margenPctTotalDe,
   margenTotalDe,
 } from "@/lib/profesoresHelpers";
 import type { MetricValue } from "@/types/kpi";
@@ -159,6 +161,17 @@ export default function ProfesoresPage() {
    */
   const facturacionTotal = mes ? facturacionTotalDe(mes) : null;
   const margenTotal = mes ? margenTotalDe(mes) : null;
+  /**
+   * El mismo margen en proporción: cuánto queda de cada euro que facturan sus
+   * alumnos. Va de n2 en la tarjeta, no de n1, porque la pregunta que se le hace
+   * a esta página es cuánto dinero deja la plantilla; el % es para comparar
+   * meses (o profesores, en la tabla), donde el € solo engaña — 600 € de margen
+   * son excelentes sobre 800 € facturados y malos sobre 6.000 €.
+   *
+   * null cuando no se puede dividir, igual que las dos cifras de arriba: nunca
+   * un 0% inventado. Ver margenSobreFacturacion.
+   */
+  const margenPctTotal = mes ? margenPctTotalDe(mes) : null;
   const esParcial = mes?.facturacion_parcial === true;
 
   /**
@@ -288,6 +301,15 @@ export default function ProfesoresPage() {
                       ? "green"
                       : "red"
                 }
+                /* Mismo n2 y misma etiqueta que la tarjeta "Margen bruto real"
+                   de Resumen Ejecutivo: los hints de las dos dicen que son el
+                   mismo número, así que también tienen que enseñarlo igual. */
+                subValues={[
+                  {
+                    label: "Margen / facturación",
+                    value: formatPercent(margenPctTotal),
+                  },
+                ]}
                 hint={
                   <>
                     <div>
@@ -356,7 +378,7 @@ export default function ProfesoresPage() {
             title={`Detalle por profesor${
               mesActivoLabel ? ` · ${mesActivoLabel}` : ""
             }`}
-            description="Liquidación profesor por profesor del mes elegido. El total del pie suma lo que se está viendo, así que respeta los filtros. Facturación y margen salen de los planes de los alumnos asignados, y junto al nombre pueden aparecer dos avisos DISTINTOS: el ⚠ amarillo dice que falta el precio de algún alumno (el margen es un mínimo), y el chip azul ⇄ dice que la ventana de alguno no cuadra con su acceso y su importe puede estar contado en el mes de al lado — se pulsa y despliega quiénes son. Un « — » significa que no se sabe, nunca 0 €."
+            description="Liquidación profesor por profesor del mes elegido. El total del pie suma lo que se está viendo, así que respeta los filtros. «Margen %» es ese mismo margen sobre lo que factura cada profesor: ordenar por esa columna da el orden de rentabilidad, que NO es el de euros — el que más margen deja suele ser el que más alumnos tiene, no el que mejor rinde. Facturación y margen salen de los planes de los alumnos asignados, y junto al nombre pueden aparecer dos avisos DISTINTOS: el ⚠ amarillo dice que falta el precio de algún alumno (el margen es un mínimo), y el chip azul ⇄ dice que la ventana de alguno no cuadra con su acceso y su importe puede estar contado en el mes de al lado — se pulsa y despliega quiénes son. Un « — » significa que no se sabe, nunca 0 €."
           >
             <PayoutsTable teachers={mes.teachers ?? []} />
           </Panel>
