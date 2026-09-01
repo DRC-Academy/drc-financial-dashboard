@@ -24,7 +24,11 @@
  */
 
 import type { MetricValue } from "@/types/kpi";
-import type { PayoutsMonth, TeacherPayout } from "@/types/profesores";
+import type {
+  PayoutsMonth,
+  TeacherPayout,
+  VentanaDudosa,
+} from "@/types/profesores";
 
 /** Número utilizable, o null. Cubre undefined (campo ausente), NaN e Infinity. */
 const num = (v: unknown): MetricValue =>
@@ -113,3 +117,101 @@ export function avisoParcialDe(t: TeacherPayout): string | null {
 
   return null;
 }
+
+// ── Ventanas dudosas ────────────────────────────────────────────────────────
+//
+// El OTRO problema del margen, y no hay que confundirlo con el de arriba:
+//
+//   facturacion_parcial → FALTA el precio de un alumno. La facturación es un
+//                         piso y el margen está inflado. ADVERTENCIA (amarillo).
+//   ventanas_dudosas    → no falta nada: el importe está sumado. Lo que no
+//                         cuadra es la VENTANA de ese alumno de pago único (su
+//                         plan termina en una fecha y su acceso en otra muy
+//                         distinta), así que el importe puede estar contado en
+//                         el mes de al lado. INFORMATIVO (azul).
+//
+// Se separan hasta en el color porque no se arreglan igual: uno se arregla
+// cargando precios en `product_prices`, el otro revisando la ficha de ESE
+// alumno. Fundirlos en un único ⚠ mandaría a mirar el sitio equivocado.
+//
+// Todo se lee con tolerancia a campos ausentes, igual que el resto del módulo:
+// los dos campos llegaron el 01/09/2026 y quedan fuera de la validación dura del
+// lector, así que con un endpoint anterior valen 0 y [] y no se pinta nada.
+
+/** Cuántos alumnos de este profesor tienen la ventana en duda. 0 si no se sabe. */
+export function ventanasDudosasDe(t: TeacherPayout): number {
+  const n = num(t.ventanas_dudosas);
+  if (n !== null) return Math.max(0, n);
+  // Sin el contador, el propio detalle sirve de recuento: no se inventa nada,
+  // se cuenta lo que hay.
+  return detalleDudosasDe(t).length;
+}
+
+/**
+ * Quiénes son. El array llega SIN validar fila a fila (el lector sólo comprueba
+ * los agregados del mes), así que se filtra acá: una fila sin nombre o sin
+ * motivo no se pinta, en vez de dejar un "undefined" en la lista.
+ */
+export function detalleDudosasDe(t: TeacherPayout): VentanaDudosa[] {
+  const detalle = t.ventanas_dudosas_detalle;
+  if (!Array.isArray(detalle)) return [];
+  return detalle.filter(
+    (d): d is VentanaDudosa =>
+      typeof d?.student_name === "string" &&
+      d.student_name.length > 0 &&
+      typeof d?.motivo === "string" &&
+      d.motivo.length > 0
+  );
+}
+
+/**
+ * Ventanas dudosas del MES entero. Se prefiere el agregado del endpoint, que es
+ * quien manda; si no viene (versión anterior), se suma por profesor para que el
+ * aviso no desaparezca teniendo el detalle delante.
+ */
+export function ventanasDudosasTotalDe(mes: PayoutsMonth): number {
+  const n = num(mes.ventanas_dudosas_total);
+  if (n !== null) return Math.max(0, n);
+  return (mes.teachers ?? []).reduce((s, t) => s + ventanasDudosasDe(t), 0);
+}
+
+/** Los profesores con alguna, en el orden en que vinieron. Vacío si no hay. */
+export function profesoresConDudosas(mes: PayoutsMonth): TeacherPayout[] {
+  return (mes.teachers ?? []).filter((t) => ventanasDudosasDe(t) > 0);
+}
+
+/**
+ * Etiqueta del badge azul de un profesor, o null si no tiene ninguna. Dice el
+ * número Y qué significa: "2" a secas no distingue este aviso del amarillo.
+ */
+export function avisoDudosasDe(t: TeacherPayout): string | null {
+  const n = ventanasDudosasDe(t);
+  if (n === 0) return null;
+  return n === 1
+    ? "1 alumno con la ventana de facturación en duda: su importe SÍ está sumado, pero puede estar contado en el mes de al lado."
+    : `${n} alumnos con la ventana de facturación en duda: su importe SÍ está sumado, pero puede estar contado en el mes de al lado.`;
+}
+
+/**
+ * UN MES CERRADO NO ES INMUTABLE. Es la frase que falta cuando alguien guarda
+ * una captura del margen de julio y en septiembre le sale otro número.
+ *
+ * El motivo está en cómo arma DRC Gestión el roster de cada profesor: los
+ * alumnos se filtran por el acceso que tienen HOY, no por el que tenían en el
+ * mes que se pide. Un alumno que caduca deja de contar también en los meses
+ * pasados, y uno que renueva vuelve a contar en ellos, así que la facturación y
+ * el margen de un mes ya cerrado pueden moverse sin que nadie toque ese mes.
+ *
+ * El GASTO no depende de eso (sale de la liquidación del mes, congelada al
+ * pagarse), pero sí puede cambiar si el admin reabre o rectifica una
+ * liquidación. Por eso el aviso habla de "los valores", no sólo del margen.
+ *
+ * Vive acá y no suelto en cada página para que las tres vistas que enseñan
+ * histórico digan exactamente lo mismo.
+ */
+export const AVISO_MESES_RETROACTIVOS =
+  "Los meses cerrados pueden variar: DRC Gestión arma el roster de cada " +
+  "profesor con el acceso que tienen sus alumnos HOY, no con el que tenían ese " +
+  "mes, así que la facturación y el margen de un mes pasado cambian si un " +
+  "alumno caduca o renueva (y el gasto, si se rectifica su liquidación). Un " +
+  "número guardado de un mes viejo no tiene por qué coincidir con el de ahora.";

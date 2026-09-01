@@ -6,7 +6,8 @@ import { isApiMonth } from "@/lib/kpiHelpers";
  * GET /api/profesores/summary?from=YYYY-MM&to=YYYY-MM
  *
  * Serie mensual del gasto en profesores, para el gráfico de tendencia. Mismo
- * papel que /api/profesores: el secreto se queda en el servidor.
+ * papel que /api/profesores: el secreto se queda en el servidor, y el
+ * `Cache-Control` del otro lado se reenvía tal cual (hoy, "no-store" siempre).
  *
  * Sin parámetros devuelve los últimos MESES_TENDENCIA meses terminando en el
  * mes en curso. El rango por defecto se calcula ACÁ (servidor) y no en la
@@ -14,6 +15,8 @@ import { isApiMonth } from "@/lib/kpiHelpers";
  * puede desincronizarse entre el render del servidor y la hidratación.
  */
 export const dynamic = "force-dynamic";
+
+const SIN_CACHE = { "Cache-Control": "no-store" } as const;
 
 /**
  * Ventana por defecto: los meses que ofrece el desplegable de la página de
@@ -34,25 +37,34 @@ export async function GET(request: Request) {
   const from = params.get("from") ?? minusMonths(to, MESES_TENDENCIA - 1);
 
   if (!isApiMonth(from) || !isApiMonth(to) || from > to) {
-    return NextResponse.json({
-      ok: false,
-      error:
-        "Rango inválido: se esperan dos meses YYYY-MM con from anterior o igual a to.",
-      data: null,
-      fetchedAt: Date.now(),
-    });
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Rango inválido: se esperan dos meses YYYY-MM con from anterior o igual a to.",
+        data: null,
+        fetchedAt: Date.now(),
+      },
+      { headers: SIN_CACHE }
+    );
   }
 
-  const data = await readPayoutsSummary(from, to);
+  const { data, cacheControl } = await readPayoutsSummary(from, to);
 
   if (!data) {
-    return NextResponse.json({
-      ok: false,
-      error: "No se pudo leer la serie de gasto en profesores de DRC Gestión",
-      data: null,
-      fetchedAt: Date.now(),
-    });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "No se pudo leer la serie de gasto en profesores de DRC Gestión",
+        data: null,
+        fetchedAt: Date.now(),
+      },
+      { headers: SIN_CACHE }
+    );
   }
 
-  return NextResponse.json({ ok: true, data, fetchedAt: Date.now() });
+  return NextResponse.json(
+    { ok: true, data, fetchedAt: Date.now() },
+    { headers: { "Cache-Control": cacheControl ?? "no-store" } }
+  );
 }

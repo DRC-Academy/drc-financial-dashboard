@@ -39,10 +39,12 @@ import {
   formatPointsDelta,
 } from "@/lib/kpiHelpers";
 import {
+  AVISO_MESES_RETROACTIVOS,
   avisoParcialMes,
   facturacionTotalDe,
   margenTotalDe,
 } from "@/lib/profesoresHelpers";
+import { VentanasDudosasNota } from "@/components/ui/VentanasDudosasNota";
 import {
   getBlock,
   rankAtMonth,
@@ -991,11 +993,30 @@ export default function ResumenPage() {
                       asignados: no es la cuenta entera de la academia, así que su
                       % no se lee contra el objetivo MB_obj de al lado.
                     </div>
+                    {/* Esta tarjeta cambia de mes con el desplegable de arriba,
+                        o sea que es una vista histórica: tiene que decir que un
+                        mes cerrado puede no salir igual la próxima vez. */}
+                    {profesMes?.is_current_month === false && (
+                      <div>{AVISO_MESES_RETROACTIVOS}</div>
+                    )}
                   </>
                 )
               }
             />
           </div>
+
+          {/* El aviso AZUL de ventanas dudosas, con el listado de alumnos
+              detrás. Acá es más necesario que en Profesores: allí hay una tabla
+              debajo donde cada profesor lleva su chip, y en esta página la
+              tarjeta de margen está sola, así que sin este bloque el problema no
+              se vería en ninguna parte. El ⚠ amarillo de cifra parcial sigue en
+              la esquina de la tarjeta: son dos avisos distintos. */}
+          {profesMes && (
+            <VentanasDudosasNota
+              mes={profesMes}
+              coda="El detalle profesor por profesor está en la página Profesores."
+            />
+          )}
 
           {/* --- Fila 6 · Secundarias: volumen y registro mensual ---
               Todas las de esta fila SIGUEN estando (ninguna se borró), pero

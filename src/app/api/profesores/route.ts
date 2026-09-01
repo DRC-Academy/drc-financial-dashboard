@@ -18,8 +18,17 @@ import { isApiMonth } from "@/lib/kpiHelpers";
  * Mismo contrato de respuesta que /api/kpi — { ok, data, fetchedAt } con HTTP
  * 200 incluso al fallar—, que es lo que espera useLiveData para mostrar "sin
  * datos" en vez de romper.
+ *
+ * El `Cache-Control` del otro lado se REENVÍA tal cual ("no-store" el mes en
+ * curso, "private, max-age=300" uno cerrado). Esta ruta es un proxy: la regla de
+ * cuánto vale el dato es del endpoint que lo calcula, no de acá, y se pasa
+ * entera —también al lector de servidor, ver lib/externalPayouts— en vez de
+ * quedarse en el camino.
  */
 export const dynamic = "force-dynamic";
+
+/** Sin dato que cachear no hay nada que reutilizar. */
+const SIN_CACHE = { "Cache-Control": "no-store" } as const;
 
 export async function GET(request: Request) {
   const month =
@@ -29,27 +38,36 @@ export async function GET(request: Request) {
   // que esto no debería saltar nunca; si salta, es un bug de este lado y no
   // vale la pena molestar al endpoint externo para confirmarlo.
   if (!isApiMonth(month)) {
-    return NextResponse.json({
-      ok: false,
-      error: "Mes inválido: se espera el formato YYYY-MM (ej. 2026-08).",
-      data: null,
-      fetchedAt: Date.now(),
-    });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Mes inválido: se espera el formato YYYY-MM (ej. 2026-08).",
+        data: null,
+        fetchedAt: Date.now(),
+      },
+      { headers: SIN_CACHE }
+    );
   }
 
-  const data = await readPayoutsMonth(month);
+  const { data, cacheControl } = await readPayoutsMonth(month);
 
   if (!data) {
     // El motivo real (401/400/503/500/timeout) ya quedó en los logs del
     // servidor con su diagnóstico; al navegador no se le cuenta nada del otro
     // lado más allá de que no hay datos.
-    return NextResponse.json({
-      ok: false,
-      error: "No se pudo leer el gasto en profesores de DRC Gestión",
-      data: null,
-      fetchedAt: Date.now(),
-    });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "No se pudo leer el gasto en profesores de DRC Gestión",
+        data: null,
+        fetchedAt: Date.now(),
+      },
+      { headers: SIN_CACHE }
+    );
   }
 
-  return NextResponse.json({ ok: true, data, fetchedAt: Date.now() });
+  return NextResponse.json(
+    { ok: true, data, fetchedAt: Date.now() },
+    { headers: { "Cache-Control": cacheControl ?? "no-store" } }
+  );
 }

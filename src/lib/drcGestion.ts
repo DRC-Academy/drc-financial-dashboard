@@ -98,16 +98,40 @@ function logHttpError(path: string, status: number, body: string) {
   }
 }
 
+
+/**
+ * Respuesta cruda de DRC Gestión: el JSON y el `Cache-Control` que lo acompaña.
+ *
+ * La cabecera viaja junto al cuerpo porque es DATO, no fontanería: el endpoint
+ * de payouts manda `no-store` para el mes en curso y `private, max-age=300` para
+ * uno cerrado, y esa diferencia es una regla suya (el mes en curso cambia con
+ * cada clase que se registra). Quien guarde la respuesta tiene que leerla de
+ * acá en vez de inventarse un TTL propio que la contradiga.
+ */
+export interface DrcRespuesta {
+  json: unknown | null;
+  /** Tal cual lo mandó el otro lado, o null si la llamada falló o no venía. */
+  cacheControl: string | null;
+}
+
 /**
  * GET a un endpoint de DRC Gestión con el secreto en la cabecera. Devuelve el
- * JSON crudo o null. Absorbe TODO: config ausente, timeout, DNS caído, HTML en
- * vez de JSON.
+ * JSON crudo y su `Cache-Control`. Absorbe TODO: config ausente, timeout, DNS
+ * caído, HTML en vez de JSON.
  */
-export async function fetchDrcGestion(path: string): Promise<unknown | null> {
+export async function fetchDrcGestionConCabeceras(
+  path: string
+): Promise<DrcRespuesta> {
+  const fallo: DrcRespuesta = { json: null, cacheControl: null };
+
   const config = getConfig();
-  if (!config) return null;
+  if (!config) return fallo;
 
   try {
+    // `cache: "no-store"` acá es el del fetch de Next (que si no guardaría la
+    // respuesta en su Data Cache por su cuenta, con reglas propias). Cuánto vale
+    // de verdad la respuesta lo dice el Cache-Control que devolvemos, y lo
+    // aplica lib/cache.
     const res = await fetch(`${config.baseUrl}${path}`, {
       headers: { "X-Dashboard-Secret": config.secret },
       cache: "no-store",
@@ -119,15 +143,59 @@ export async function fetchDrcGestion(path: string): Promise<unknown | null> {
       // puede leer, no es motivo para perder el código de estado.
       const body = await res.text().catch(() => "");
       logHttpError(path, res.status, body);
-      return null;
+      return fallo;
     }
 
-    return await res.json();
+    return {
+      json: await res.json(),
+      cacheControl: res.headers.get("cache-control"),
+    };
   } catch (err: unknown) {
     // Timeout (AbortError), red caída, JSON malformado.
     console.error(`[drcGestion] Falló la llamada a ${path}:`, err);
-    return null;
+    return fallo;
   }
+}
+
+/**
+ * Igual, pero sólo el JSON. Para los lectores que no necesitan mirar la cabecera
+ * (hoy /api/external/subscriptions, que se guarda con un TTL fijo nuestro).
+ */
+export async function fetchDrcGestion(path: string): Promise<unknown | null> {
+  return (await fetchDrcGestionConCabeceras(path)).json;
+}
+
+/**
+ * Cuántos ms se puede guardar una respuesta según SU `Cache-Control`. Es la
+ * traducción literal de lo que dice la fuente, no una política nuestra:
+ *
+ *   · `no-store` / `no-cache` → 0. No se guarda.
+ *   · `max-age=N`             → N segundos. (`s-maxage` no se mira: nuestro
+ *                               almacén es del proceso, no una CDN compartida,
+ *                               y el otro lado manda las respuestas como
+ *                               `private` justamente por eso.)
+ *   · sin cabecera            → 0. Sin instrucción no se inventa una: el otro
+ *                               lado la manda siempre, así que si no está es
+ *                               que la llamada falló o que cambió el contrato, y
+ *                               las dos cosas se arreglan volviendo a pedir, no
+ *                               sirviendo algo viejo.
+ *
+ * Que el caso por defecto sea 0 tiene un coste —una llamada remota por sondeo—
+ * que absorbe el coalescing de peticiones en vuelo de lib/cache: varias
+ * pestañas pidiendo el mismo mes a la vez siguen siendo UNA sola llamada.
+ */
+export function ttlDeCacheControl(cacheControl: string | null): number {
+  if (!cacheControl) return 0;
+
+  const cc = cacheControl.toLowerCase();
+  if (cc.includes("no-store") || cc.includes("no-cache")) return 0;
+
+  // El `[^-]` de delante evita que "s-maxage=600" cuele como "max-age=600".
+  const m = /(?:^|[^-])max-age\s*=\s*(\d+)/.exec(cc);
+  if (!m) return 0;
+
+  const segundos = Number(m[1]);
+  return Number.isFinite(segundos) && segundos > 0 ? segundos * 1000 : 0;
 }
 
 /** Número utilizable, o null. Cubre undefined (campo ausente), NaN e Infinity. */

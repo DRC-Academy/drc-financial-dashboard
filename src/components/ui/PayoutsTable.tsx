@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import clsx from "clsx";
 import { EmptyState } from "./EmptyState";
 import { ParcialBadge } from "./ParcialBadge";
+import { VentanaDudosaBadge } from "./VentanaDudosaBadge";
 import { formatCurrency, formatNumber } from "@/lib/kpiHelpers";
 import {
+  avisoDudosasDe,
   avisoParcialDe,
+  detalleDudosasDe,
   facturacionDe,
   margenDe,
+  ventanasDudosasDe,
 } from "@/lib/profesoresHelpers";
 import type { MetricValue } from "@/types/kpi";
 import type { PayoutStatus, TeacherPayout } from "@/types/profesores";
@@ -178,6 +182,49 @@ function SortableTh({
   );
 }
 
+/**
+ * Fila desplegable con los alumnos cuya ventana de facturación está en duda.
+ *
+ * Va como una <tr> propia y no como un panel flotante a propósito: la tabla vive
+ * dentro de un `overflow-x-auto`, que recorta cualquier cosa posicionada encima,
+ * y un tooltip nativo no da para leer con calma una lista de nombres con su
+ * motivo. Acá se puede leer, seleccionar y copiar.
+ *
+ * El contador y el detalle son dos campos distintos del payload: si el contador
+ * dice 2 y el detalle llega vacío (versión anterior del endpoint, o filas sin
+ * nombre que detalleDudosasDe descarta), se dice — una fila desplegada y vacía
+ * parece un fallo de la página, y la revisión a hacer es la misma.
+ */
+function FilaDudosas({ teacher, id }: { teacher: TeacherPayout; id: string }) {
+  const alumnos = detalleDudosasDe(teacher);
+
+  return (
+    <tr id={id} className="border-b border-drc-line/60 bg-drc-blue/5">
+      <td colSpan={7} className="px-2 py-2 text-[11px] text-drc-ink-soft">
+        <div className="font-medium text-drc-blue">
+          Ventanas de facturación en duda — su importe está sumado, pero puede
+          estar contado en el mes de al lado.
+        </div>
+        {alumnos.length === 0 ? (
+          <div className="mt-1">
+            DRC Gestión no mandó el detalle por alumno: hay que revisar los
+            alumnos de pago único de este profesor en su ficha.
+          </div>
+        ) : (
+          <ul className="mt-1 space-y-0.5">
+            {alumnos.map((d) => (
+              <li key={d.student_name}>
+                <span className="text-drc-ink">{d.student_name}</span> —{" "}
+                {d.motivo}
+              </li>
+            ))}
+          </ul>
+        )}
+      </td>
+    </tr>
+  );
+}
+
 export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
   // Por defecto, importe descendente: la pregunta habitual sobre una
   // liquidación es "quién se lleva más", no "quién va primero por nombre".
@@ -186,6 +233,24 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
   const [estado, setEstado] = useState<FiltroEstado>("todos");
   const [activo, setActivo] = useState<FiltroActivo>("todos");
   const [busqueda, setBusqueda] = useState("");
+
+  /**
+   * Profesores con la fila de ventanas dudosas desplegada. Un Set y no un id
+   * suelto: son avisos que se comparan entre sí (¿a cuáles les baila el mes?), y
+   * un acordeón que cierra el anterior al abrir el siguiente obliga a recordar
+   * lo que acaba de desaparecer.
+   */
+  const [expandidos, setExpandidos] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+
+  const alternarDetalle = (teacherId: string) => {
+    setExpandidos((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(teacherId)) next.add(teacherId);
+      return next;
+    });
+  };
 
   const filas = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -358,33 +423,52 @@ export function PayoutsTable({ teachers }: { teachers: TeacherPayout[] }) {
           <tbody>
             {filas.map((t) => {
               const aviso = avisoParcialDe(t);
+              // Los dos avisos conviven en la misma celda y NO se funden: a uno
+              // le falta un precio (amarillo) y al otro le baila la ventana
+              // (azul). Un profesor puede tener los dos, y son dos revisiones
+              // distintas en dos sitios distintos de DRC Gestión.
+              const avisoDudosas = avisoDudosasDe(t);
+              const detalleId = `dudosas-${t.teacher_id}`;
+              const abierta = expandidos.has(t.teacher_id);
               return (
-                <tr key={t.teacher_id} className="border-b border-drc-line/60">
-                  <td className="py-2 pr-4 text-drc-ink">
-                    {t.teacher_name}
-                    {aviso && <ParcialBadge aviso={aviso} />}
-                  </td>
-                  <td className="py-2 tabular text-right text-drc-ink-soft">
-                    {formatNumber(t.classes_payable)}
-                  </td>
-                  <td className="py-2 tabular text-right font-medium text-drc-ink">
-                    {formatCurrency(t.total_amount)}
-                  </td>
-                  <ImporteCell value={facturacionDe(t)} />
-                  {/* El margen sí lleva semáforo: es la única columna con un
-                      signo que significa algo (ganamos o perdemos con él). */}
-                  <ImporteCell value={margenDe(t)} semaforo />
-                  <td className="py-2 pr-4">
-                    <EstadoBadge status={t.status} />
-                  </td>
-                  <td className="py-2 text-center">
-                    {t.is_active ? (
-                      <span className="text-drc-ink">Sí</span>
-                    ) : (
-                      <span className="text-drc-ink-soft">No</span>
-                    )}
-                  </td>
-                </tr>
+                <Fragment key={t.teacher_id}>
+                  <tr className="border-b border-drc-line/60">
+                    <td className="py-2 pr-4 text-drc-ink">
+                      {t.teacher_name}
+                      {aviso && <ParcialBadge aviso={aviso} />}
+                      {avisoDudosas && (
+                        <VentanaDudosaBadge
+                          n={ventanasDudosasDe(t)}
+                          aviso={avisoDudosas}
+                          expandido={abierta}
+                          onToggle={() => alternarDetalle(t.teacher_id)}
+                          controla={detalleId}
+                        />
+                      )}
+                    </td>
+                    <td className="py-2 tabular text-right text-drc-ink-soft">
+                      {formatNumber(t.classes_payable)}
+                    </td>
+                    <td className="py-2 tabular text-right font-medium text-drc-ink">
+                      {formatCurrency(t.total_amount)}
+                    </td>
+                    <ImporteCell value={facturacionDe(t)} />
+                    {/* El margen sí lleva semáforo: es la única columna con un
+                        signo que significa algo (ganamos o perdemos con él). */}
+                    <ImporteCell value={margenDe(t)} semaforo />
+                    <td className="py-2 pr-4">
+                      <EstadoBadge status={t.status} />
+                    </td>
+                    <td className="py-2 text-center">
+                      {t.is_active ? (
+                        <span className="text-drc-ink">Sí</span>
+                      ) : (
+                        <span className="text-drc-ink-soft">No</span>
+                      )}
+                    </td>
+                  </tr>
+                  {abierta && <FilaDudosas teacher={t} id={detalleId} />}
+                </Fragment>
               );
             })}
             {filas.length === 0 && (

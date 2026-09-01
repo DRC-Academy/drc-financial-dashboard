@@ -16,7 +16,12 @@ import {
   formatCurrency,
   formatNumber,
 } from "@/lib/kpiHelpers";
-import { facturacionTotalDe, margenTotalDe } from "@/lib/profesoresHelpers";
+import { VentanasDudosasNota } from "@/components/ui/VentanasDudosasNota";
+import {
+  AVISO_MESES_RETROACTIVOS,
+  facturacionTotalDe,
+  margenTotalDe,
+} from "@/lib/profesoresHelpers";
 import type { MetricValue } from "@/types/kpi";
 import type { PayoutsMonth, PayoutsSummary } from "@/types/profesores";
 import { CAT, GASTO } from "@/lib/chartColors";
@@ -309,6 +314,16 @@ export default function ProfesoresPage() {
               </div>
             )}
 
+            {/* AZUL, y debajo del amarillo: es el otro problema del margen, no
+                el mismo con otras palabras. El amarillo dice que a la cifra le
+                FALTA algo; éste dice que está entera pero puede estar repartida
+                entre dos meses. Del mismo color se corregiría el dato
+                equivocado — ver components/ui/VentanaDudosaBadge. */}
+            <VentanasDudosasNota
+              mes={mes}
+              coda="En la tabla de abajo, cada profesor afectado lleva un chip azul ⇄ que despliega sus alumnos."
+            />
+
             {/* Sin un solo alumno priceado no hay cifra que dar, y las dos
                 tarjetas salen en "—". Sin este texto, ese "—" se lee como un
                 fallo del dashboard y no como lo que es: falta cargar precios
@@ -321,6 +336,16 @@ export default function ProfesoresPage() {
                 falta, y aparece cuando se carguen los precios de los productos.
               </div>
             )}
+
+            {/* Sin color ni icono: no es una alerta sobre ESTE mes, es cómo se
+                comporta la fuente. Va igual a la vista y no en un tooltip,
+                porque el que copia el margen de un mes cerrado a una hoja lo
+                hace dando por hecho justo lo contrario. */}
+            {!mes.is_current_month && (
+              <p className="text-[11px] text-drc-ink-soft">
+                {AVISO_MESES_RETROACTIVOS}
+              </p>
+            )}
           </div>
 
           {/* --- Detalle por profesor ---
@@ -331,7 +356,7 @@ export default function ProfesoresPage() {
             title={`Detalle por profesor${
               mesActivoLabel ? ` · ${mesActivoLabel}` : ""
             }`}
-            description="Liquidación profesor por profesor del mes elegido. El total del pie suma lo que se está viendo, así que respeta los filtros. Facturación y margen salen de los planes de los alumnos asignados: un ⚠ junto al nombre avisa de a quién le falta algún precio (su margen es un mínimo), y un « — » significa que no se sabe, nunca 0 €."
+            description="Liquidación profesor por profesor del mes elegido. El total del pie suma lo que se está viendo, así que respeta los filtros. Facturación y margen salen de los planes de los alumnos asignados, y junto al nombre pueden aparecer dos avisos DISTINTOS: el ⚠ amarillo dice que falta el precio de algún alumno (el margen es un mínimo), y el chip azul ⇄ dice que la ventana de alguno no cuadra con su acceso y su importe puede estar contado en el mes de al lado — se pulsa y despliega quiénes son. Un « — » significa que no se sabe, nunca 0 €."
           >
             <PayoutsTable teachers={mes.teachers ?? []} />
           </Panel>
@@ -359,6 +384,14 @@ export default function ProfesoresPage() {
               barFormatter={(v) => formatCurrency(v)}
               lineFormatter={(v) => formatNumber(v)}
             />
+
+            {/* La serie se recalcula ENTERA en cada petición, meses cerrados
+                incluidos: no es un histórico congelado que se va ampliando por
+                la derecha. Sin decirlo, un punto que se mueve entre dos visitas
+                se lee como un bug del gráfico. */}
+            <p className="mt-3 text-[11px] text-drc-ink-soft">
+              {AVISO_MESES_RETROACTIVOS}
+            </p>
           </Panel>
 
           {mesError && (

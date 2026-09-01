@@ -55,6 +55,40 @@ export interface TeacherPayout {
    * este flag — ver avisoParcialDe() en lib/profesoresHelpers.
    */
   facturacion_parcial: boolean;
+
+  // ── Ventanas dudosas (DRC Gestión, 01/09/2026) ────────────────────────────
+  //
+  // NO es lo mismo que `facturacion_parcial`, y confundirlos lleva a leer mal
+  // los dos números:
+  //
+  //   facturacion_parcial → FALTA un precio. `facturacion` es un PISO y el
+  //                         margen está inflado. Aviso de ADVERTENCIA (amarillo).
+  //   ventanas_dudosas    → NO falta nada: el importe del alumno está sumado.
+  //                         Lo que no cuadra es su VENTANA — el plan de pago
+  //                         único termina en una fecha y su acceso en otra muy
+  //                         distinta—, así que la cifra puede estar corrida de
+  //                         mes: de más en éste y de menos en el de al lado, o
+  //                         al revés. Aviso INFORMATIVO (azul), no de error.
+
+  /** Alumnos de pago único cuya ventana no cuadra con su acceso. 0 = ninguno. */
+  ventanas_dudosas: number;
+  /**
+   * QUIÉNES son, para poder listarlos en vez de enseñar un número suelto. Vacío
+   * si no hay ninguno. Sólo nombre y motivo: el detalle completo (importe,
+   * producto) se queda del lado del admin, que es donde se arregla el dato.
+   *
+   * Llegó junto con `ventanas_dudosas` pero se lee SIEMPRE por
+   * detalleDudosasDe() de lib/profesoresHelpers: el array no lo valida nadie
+   * fila a fila, así que el helper lo filtra antes de pintarlo.
+   */
+  ventanas_dudosas_detalle: VentanaDudosa[];
+}
+
+/** Un alumno con la ventana de facturación en duda, tal cual lo manda el endpoint. */
+export interface VentanaDudosa {
+  student_name: string;
+  /** Texto ya redactado por DRC Gestión: qué fecha no cuadra con cuál y por cuánto. */
+  motivo: string;
 }
 
 /** GET /api/external/payouts?month=YYYY-MM */
@@ -107,6 +141,17 @@ export interface PayoutsMonth {
   /** true si a CUALQUIER profesor le falta el precio de algún alumno → las dos
    *  cifras de arriba son un mínimo. */
   facturacion_parcial: boolean;
+  /**
+   * Suma de `ventanas_dudosas` de todos los profesores. Es un problema DISTINTO
+   * de `facturacion_parcial` (ver TeacherPayout): acá el dato está completo,
+   * pero la ventana de esos alumnos puede estar corrida de mes.
+   *
+   * Llegó después que el resto (01/09/2026), así que NO entra en la validación
+   * dura de lib/externalPayouts: si el endpoint volviera a una versión anterior
+   * llega undefined pese al tipo, el aviso simplemente no se pinta, y ni el
+   * gasto ni el margen se ven afectados.
+   */
+  ventanas_dudosas_total: number;
 
   teachers: TeacherPayout[];
 }
