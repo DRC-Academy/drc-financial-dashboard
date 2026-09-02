@@ -51,3 +51,29 @@ export function wooPorEstado(
   const n = susc.woocommerce.por_estado?.[estado];
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
+
+/**
+ * Varios estados de WooCommerce sumados en un solo número, o null si de alguno
+ * no se sabe. Hoy sólo lo usa "activas + programadas", la proyección de la
+ * tarjeta de suscripciones programadas.
+ *
+ * NULL SI FALTA CUALQUIER SUMANDO, y no "la suma de los que se sepan": a una
+ * suma incompleta no se le nota que lo está. Con `scheduled` ausente y sumado
+ * como 0, la proyección saldría exactamente igual que las activas y se leería
+ * como "no hay ninguna programada" — que es la conclusión falsa que
+ * `wooPorEstado` evita devolviendo "—" en vez de un cero inventado. Un "—" en
+ * la proyección se investiga; un número que casualmente coincide con el de al
+ * lado, no.
+ */
+export function wooSumaEstados(
+  susc: SubscriptionsSnapshot | null,
+  estados: readonly string[]
+): MetricValue {
+  let total = 0;
+  for (const estado of estados) {
+    const n = wooPorEstado(susc, estado);
+    if (n === null) return null;
+    total += n;
+  }
+  return total;
+}

@@ -46,7 +46,7 @@ import {
   margenTotalDe,
 } from "@/lib/profesoresHelpers";
 import { VentanasDudosasNota } from "@/components/ui/VentanasDudosasNota";
-import { wooPorEstado } from "@/lib/suscripcionesHelpers";
+import { wooPorEstado, wooSumaEstados } from "@/lib/suscripcionesHelpers";
 import {
   getBlock,
   rankAtMonth,
@@ -386,6 +386,35 @@ export default function ResumenPage() {
    */
   const wooActivas = wooPorEstado(susc, "active");
 
+  /**
+   * LAS PROGRAMADAS — suscripciones ya pagadas cuyo acceso todavía no empezó.
+   *
+   * Estaban en la página desde siempre, pero sólo como una fila más del panel
+   * "Suscripciones en WooCommerce" de abajo, entre estados que son problemas
+   * (en espera, pendientes de pago, vencidas). Ahí se leen como una anomalía a
+   * revisar, y son lo contrario: dinero ya cobrado que todavía no arrancó.
+   *
+   * Que la fila siga abajo y además haya tarjeta NO es duplicar por descuido:
+   * abajo cuadra el desglose por estado contra el admin de Woo, acá contesta
+   * "cuántas están por entrar". Son dos preguntas distintas y la segunda no se
+   * hace mirando una lista de siete filas.
+   */
+  const wooProgramadas = wooPorEstado(susc, "scheduled");
+
+  /**
+   * ACTIVAS + PROGRAMADAS: hacia dónde va el MRR, no dónde está.
+   *
+   * Es la única cifra de este bloque que NO describe el presente, y por eso
+   * vive dentro de la tarjeta de programadas y no en la de activas: junto al
+   * número que ya es una promesa, no junto al que se cuadra contra Woo.
+   *
+   * Mantiene la unidad de las dos tarjetas de la derecha —SUSCRIPCIONES— y por
+   * eso no se puede comparar con "Alumnos activos (total)", que son PERSONAS.
+   * Sumar personas y suscripciones da un número que no significa nada, y las
+   * etiquetas de las tres tarjetas están escritas para que nadie lo intente.
+   */
+  const wooActivasMasProgramadas = wooSumaEstados(susc, ["active", "scheduled"]);
+
   const motivoSinMargenReal: string | null = !serieProfes
     ? "Sin respuesta de DRC Gestión: no hay margen real que mostrar. El resto de la página lee del Sheet y no se ve afectado."
     : !mesEnProfesores
@@ -685,7 +714,14 @@ export default function ResumenPage() {
               </Aviso>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Tres columnas en lg y no dos: la de programadas es vecina de la
+                de activas —las dos cuentan SUSCRIPCIONES de Woo— y separarla en
+                otra fila la habría dejado suelta, sin la de al lado que le da
+                la escala. La jerarquía la marca el TAMAÑO, no la posición: las
+                dos primeras son titulares (T) porque describen HOY, y la de
+                programadas es una tarjeta normal (n1) porque describe lo que
+                todavía no pasó. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <KpiCard
                 size="titular"
                 label="Alumnos activos (total)"
@@ -772,18 +808,60 @@ export default function ResumenPage() {
                   </>
                 }
               />
+              {/* LA ÚNICA TARJETA DEL BLOQUE QUE NO HABLA DE HOY.
+                  Va en n1 y no en titular a propósito: al lado de dos titulares
+                  se lee como lo que es —un dato subordinado, y encima futuro— y
+                  no compite con los números de acceso. El semáforo azul es el
+                  segundo aviso de lo mismo: en esta página verde y rojo
+                  significan "va bien / va mal" (margen, tramo del mes), así que
+                  el azul no se confunde con un juicio de valor y sí distingue la
+                  tarjeta de sus dos vecinas neutras.
+                  En sm ocupa la fila entera debajo de las otras dos, que es la
+                  misma separación dicha con el layout que hay en lg con el
+                  tamaño. */}
+              <KpiCard
+                className="sm:col-span-2 lg:col-span-1"
+                semaforo="blue"
+                label="Programadas (arrancan pronto)"
+                value={formatNumber(wooProgramadas)}
+                subValues={[
+                  /* "Proyección" delante y no detrás: es la primera palabra que
+                     se lee, antes que el número, y es la que impide leer el 143
+                     como gente que hoy puede entrar a clase. */
+                  {
+                    label: "Proyección · activas + programadas",
+                    value: formatNumber(wooActivasMasProgramadas),
+                  },
+                ]}
+                hint={
+                  <>
+                    <div>
+                      <strong>SUSCRIPCIONES</strong> ya pagadas cuyo acceso
+                      todavía no empezó: hoy no dan clase ni suman al MRR, y lo
+                      harán cuando arranque su ciclo.
+                    </div>
+                    <div>
+                      La proyección es lo que <strong>habrá</strong>, no lo que
+                      hay: no es «personas con acceso» y no se compara con la
+                      tarjeta de alumnos activos.
+                    </div>
+                  </>
+                }
+              />
             </div>
 
             {/* La aclaración va siempre y no como tooltip: que un alumno activo
                 no genere MRR es contraintuitivo, y nadie va a pasar el ratón por
                 encima de un número que cree entender. */}
             <p className="text-[11px] text-drc-ink-soft">
-              Las dos tarjetas salen del mismo recuento en vivo del{" "}
+              Las tres tarjetas salen del mismo recuento en vivo del{" "}
               {susc.today_madrid} (hora de España), pero{" "}
-              <strong>no cuentan lo mismo</strong>: a la izquierda ALUMNOS con
-              acceso, a la derecha SUSCRIPCIONES de WooCommerce. No se restan
-              entre sí — una persona puede tener dos suscripciones a la vez, y
-              los alumnos con{" "}
+              <strong>no cuentan lo mismo</strong>: la primera son ALUMNOS con
+              acceso hoy, la segunda SUSCRIPCIONES de WooCommerce activas hoy, y
+              la tercera las que <strong>todavía no</strong> — ya pagadas, pero
+              sin acceso hasta que arranque su ciclo. No se restan entre sí —
+              una persona puede tener dos suscripciones a la vez, y los alumnos
+              con{" "}
               <strong>
                 acceso manual (plan de empresa o alta a mano) o de Oritalk
               </strong>{" "}
