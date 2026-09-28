@@ -29,6 +29,20 @@ interface SeriesDef {
   color: string;
 }
 
+/** Sub-valor de una barra, mostrado sólo en el tooltip (ver `barBreakdown`). */
+export interface BreakdownDef {
+  key: string;
+  label: string;
+}
+
+type TooltipEntry = {
+  name?: string;
+  value?: number | null;
+  color?: string;
+  dataKey?: string | number;
+  payload?: MultiBarLinePoint;
+};
+
 /**
  * Varias barras (agrupadas o apiladas) sobre el eje izquierdo + varias líneas
  * sobre el eje derecho. Extiende ComposedBarLineChart (que sólo admite UNA
@@ -42,6 +56,11 @@ interface SeriesDef {
  *
  * `stacked` apila las barras (stackId común) en vez de agruparlas — útil cuando
  * las barras son partes de un total (mix de ingresos por canal).
+ *
+ * `barBreakdown` desglosa una barra en el tooltip (clave de barra → sub-series
+ * que vienen en la misma fila), sin sumar barras al gráfico: p. ej. "Otros" =
+ * otros canales + ex-alumnos + referidos + sin atribuir. Un sub-valor null se
+ * omite en vez de mostrarse como 0.
  */
 export function MultiBarLineChart({
   data,
@@ -51,6 +70,7 @@ export function MultiBarLineChart({
   height = 280,
   barFormatter,
   lineFormatter,
+  barBreakdown,
 }: {
   data: MultiBarLinePoint[];
   bars: SeriesDef[];
@@ -59,6 +79,7 @@ export function MultiBarLineChart({
   height?: number;
   barFormatter?: (v: number) => string;
   lineFormatter?: (v: number) => string;
+  barBreakdown?: Record<string, BreakdownDef[]>;
 }) {
   const keys = [...bars, ...lines].map((s) => s.key);
   const hasData = data.some((row) =>
@@ -67,6 +88,14 @@ export function MultiBarLineChart({
   if (!hasData) return <EmptyState />;
 
   const lineLabels = new Set(lines.map((l) => l.label));
+  const fmt = (v: number, name: string) =>
+    lineLabels.has(name)
+      ? lineFormatter
+        ? lineFormatter(v)
+        : v
+      : barFormatter
+        ? barFormatter(v)
+        : v;
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -96,15 +125,17 @@ export function MultiBarLineChart({
           tickFormatter={(v) => (lineFormatter ? lineFormatter(v) : v)}
         />
         <Tooltip
-          formatter={
-            ((v: number, name: string) =>
-              lineLabels.has(name)
-                ? lineFormatter
-                  ? lineFormatter(v)
-                  : v
-                : barFormatter
-                  ? barFormatter(v)
-                  : v) as never
+          formatter={fmt as never}
+          content={
+            barBreakdown
+              ? ((props: { active?: boolean; label?: string; payload?: TooltipEntry[] }) => (
+                  <BreakdownTooltip
+                    {...props}
+                    breakdown={barBreakdown}
+                    format={fmt}
+                  />
+                )) as never
+              : undefined
           }
           contentStyle={{
             fontSize: 12,
@@ -146,5 +177,54 @@ export function MultiBarLineChart({
         ))}
       </ComposedChart>
     </ResponsiveContainer>
+  );
+}
+
+/**
+ * Tooltip con el mismo aspecto que el de recharts por defecto, más las
+ * sub-series de `barBreakdown` indentadas bajo su barra.
+ */
+function BreakdownTooltip({
+  active,
+  label,
+  payload,
+  breakdown,
+  format,
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: TooltipEntry[];
+  breakdown: Record<string, BreakdownDef[]>;
+  format: (v: number, name: string) => string | number;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div
+      className="bg-drc-card px-2.5 py-2"
+      style={{ fontSize: 12, borderRadius: 8, border: "1px solid var(--drc-line)" }}
+    >
+      <div className="mb-1 text-drc-ink">{label}</div>
+      {payload.map((p) => {
+        if (p.value === null || p.value === undefined) return null;
+        const subs = (breakdown[String(p.dataKey)] ?? []).filter(
+          (b) => p.payload?.[b.key] !== null && p.payload?.[b.key] !== undefined
+        );
+        return (
+          <div key={String(p.dataKey)} className="py-0.5">
+            <div style={{ color: p.color }}>
+              {p.name} : <span className="tabular">{format(p.value, p.name ?? "")}</span>
+            </div>
+            {subs.map((b) => (
+              <div key={b.key} className="pl-3 text-drc-ink-soft">
+                {b.label} :{" "}
+                <span className="tabular">
+                  {format(p.payload?.[b.key] as number, p.name ?? "")}
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
   );
 }

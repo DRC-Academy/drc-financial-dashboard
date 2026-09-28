@@ -33,6 +33,8 @@ export interface ChannelMetric {
   value: string;
   /** Alerta por umbrales (getAlertaOperativa). Se muestra como chip junto al valor. */
   alerta?: AlertaOperativa | null;
+  /** Aclaración corta bajo el valor (y como tooltip), p. ej. "Sin atribuir". */
+  hint?: string;
 }
 
 /** Un titular (n1): etiqueta + valor grande + badge MoM opcional. */
@@ -174,9 +176,9 @@ function Headline({
 }
 
 /** Un valor n2: etiqueta pequeña (con chip de alerta opcional) + valor tabular. */
-function Metric({ label, value, alerta }: ChannelMetric) {
+function Metric({ label, value, alerta, hint }: ChannelMetric) {
   return (
-    <div>
+    <div title={hint}>
       <div className="flex items-center gap-1.5">
         <span className="text-[11px] uppercase tracking-wide text-drc-ink-soft">
           {label}
@@ -193,6 +195,9 @@ function Metric({ label, value, alerta }: ChannelMetric) {
         )}
       </div>
       <div className="tabular text-lg font-semibold text-drc-ink">{value}</div>
+      {hint && (
+        <div className="mt-0.5 text-[11px] leading-snug text-drc-ink-soft">{hint}</div>
+      )}
     </div>
   );
 }

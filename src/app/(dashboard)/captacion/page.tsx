@@ -23,6 +23,14 @@ import {
   formatNumber,
   formatPercent,
 } from "@/lib/kpiHelpers";
+import {
+  DESGLOSE_DESDE_MES,
+  OTROS_BREAKDOWN,
+  SIN_ATRIBUIR_HINT,
+  getVentasOtros,
+  otrosRow,
+  tieneDesglose,
+} from "@/lib/ventasOtros";
 import { CANAL, CAT, GASTO, INGRESO } from "@/lib/chartColors";
 import type { DBKpiData, MetricValue } from "@/types/kpi";
 
@@ -106,11 +114,14 @@ export default function CaptacionPage() {
   const roiCapt = getValueAtMonth(kpi, "ROI_capt", activeMonth);
 
   // ---- Dona · distribución de ventas del mes seleccionado ----
-  // "Otros" NO se deriva como ventas - google - meta: DB_KPI trae la columna
-  // ventas_otros ya calculada, y cuadra exacta con esa resta en los meses que
-  // tienen el desglose cargado (jun-26: 42 = 22+13+7; jul-26: 32 = 9+14+9). Se
-  // usa la columna para no discrepar del Sheet si el criterio de atribución
-  // cambia allí.
+  // "Otros" = ventas_otros + ventas_exalumno + ventas_referido + "Sin atribuir"
+  // (lo que queda de ventas − google − meta sin canal cargado en el Sheet). Así la
+  // dona suma siempre el total. Ver src/lib/ventasOtros.ts.
+  const otrosActivo = getVentasOtros(
+    kpi.data[activeMonth],
+    "ventas",
+    tieneDesglose(months, activeMonth, DESGLOSE_DESDE_MES)
+  );
   const ventasSlices = [
     {
       name: "Google Ads",
@@ -124,7 +135,7 @@ export default function CaptacionPage() {
     },
     {
       name: "Otros",
-      value: getValueAtMonth(kpi, "ventas_otros", activeMonth),
+      value: otrosActivo.total,
       color: C.otros,
     },
   ];
@@ -148,7 +159,13 @@ export default function CaptacionPage() {
     month,
     ventas_google: kpi.data[month]?.["ventas_google"] ?? null,
     ventas_meta: kpi.data[month]?.["ventas_meta"] ?? null,
-    ventas_otros: kpi.data[month]?.["ventas_otros"] ?? null,
+    ...otrosRow(
+      getVentasOtros(
+        kpi.data[month],
+        "ventas",
+        tieneDesglose(months, month, DESGLOSE_DESDE_MES)
+      )
+    ),
     CAC_google: kpi.data[month]?.["CAC_google"] ?? null,
     CAC_meta: kpi.data[month]?.["CAC_meta"] ?? null,
   }));
@@ -364,19 +381,31 @@ export default function CaptacionPage() {
               }}
               leads={[]}
               metrics={[
-                {
-                  label: "Ventas",
-                  value: formatNumber(getValueAtMonth(kpi, "ventas_otros", activeMonth)),
-                },
+                { label: "Ventas", value: formatNumber(otrosActivo.total) },
+                /* ingresos_otros es el resto completo (ingresos_ventas − google
+                   − meta), sin atribuir incluido: por eso divide por el total de
+                   Otros y no sólo por ventas_otros. */
                 {
                   label: "Ticket medio",
                   value: formatCurrency(
                     ticketMedio(
                       getValueAtMonth(kpi, "ingresos_otros", activeMonth),
-                      getValueAtMonth(kpi, "ventas_otros", activeMonth)
+                      otrosActivo.total
                     )
                   ),
                 },
+                { label: "Otros (IAs, otros canales…)", value: formatNumber(otrosActivo.otros) },
+                { label: "Ex-alumnos", value: formatNumber(otrosActivo.exalumno) },
+                { label: "Referidos", value: formatNumber(otrosActivo.referido) },
+                ...(otrosActivo.sinAtribuir !== null
+                  ? [
+                      {
+                        label: "Sin atribuir",
+                        value: formatNumber(otrosActivo.sinAtribuir),
+                        hint: SIN_ATRIBUIR_HINT,
+                      },
+                    ]
+                  : []),
               ]}
             />
           </div>
@@ -405,7 +434,7 @@ export default function CaptacionPage() {
           {/* --- Gráfico · Ventas por canal + CAC --- */}
           <Panel
             title="Ventas por canal en el tiempo"
-            description="Barras: ventas por canal (eje izq.), incluido Otros — lo que no vino de Google ni de Meta. Líneas: CAC de cada canal (€, eje der.); Otros no tiene CAC porque no tiene inversión en ads que atribuirle."
+            description="Barras: ventas por canal (eje izq.), incluido Otros — lo que no vino de Google ni de Meta; el tooltip lo desglosa en otros canales, ex-alumnos, referidos y ventas sin canal cargado en el Sheet. Líneas: CAC de cada canal (€, eje der.); Otros no tiene CAC porque no tiene inversión en ads que atribuirle."
             action={<RangeFilter value={ventasRange} onChange={setVentasRange} />}
           >
             <MultiBarLineChart
@@ -413,7 +442,7 @@ export default function CaptacionPage() {
               bars={[
                 { key: "ventas_google", label: "Ventas Google", color: C.googleBar },
                 { key: "ventas_meta", label: "Ventas Meta", color: C.metaBar },
-                { key: "ventas_otros", label: "Ventas Otros", color: C.otros },
+                { key: "ventas_otros_total", label: "Ventas Otros", color: C.otros },
               ]}
               lines={[
                 { key: "CAC_google", label: "CAC Google", color: C.googleLine },
@@ -421,6 +450,7 @@ export default function CaptacionPage() {
               ]}
               barFormatter={(v) => formatNumber(v)}
               lineFormatter={(v) => formatCurrency(v)}
+              barBreakdown={{ ventas_otros_total: OTROS_BREAKDOWN }}
             />
           </Panel>
 
