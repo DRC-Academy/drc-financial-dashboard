@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useLiveData } from "@/hooks/useLiveData";
+import {
+  useLiveData,
+  POLL_SHEETS_DIARIO,
+} from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { KpiCard } from "@/components/ui/KpiCard";
@@ -139,8 +142,7 @@ function CanalAds({
 
 export default function ResumenDiarioPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DailyKpiData>(
-    "/api/kpi-diario",
-    60_000
+    "/api/kpi-diario", POLL_SHEETS_DIARIO
   );
 
   const kpi = data ?? EMPTY_DAILY_KPI;

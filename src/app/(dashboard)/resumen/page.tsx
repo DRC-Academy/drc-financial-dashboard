@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { useLiveData } from "@/hooks/useLiveData";
+import {
+  useLiveData,
+  POLL_DRC_GESTION,
+  POLL_SHEETS,
+  POLL_SHEETS_DIARIO,
+} from "@/hooks/useLiveData";
 import { useMesActivo } from "@/hooks/useMesActivo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
@@ -210,12 +215,11 @@ const ESTADO_WOO_LABEL: Record<string, string> = {
 
 export default function ResumenPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
-    "/api/kpi",
-    60_000
+    "/api/kpi", POLL_SHEETS
   );
   // Sólo para el bloque "Oportunidad del mes": el producto más vendido sale de
   // la hoja "KPI Producto" (misma fuente que la página Producto), no de DB_KPI.
-  const producto = useLiveData<ProductoKpiData>("/api/producto-kpi", 60_000);
+  const producto = useLiveData<ProductoKpiData>("/api/producto-kpi", POLL_SHEETS);
 
   const kpi = data ?? { months: [], keys: [], data: {} };
   const months = kpi.months;
@@ -255,8 +259,7 @@ export default function ResumenPage() {
    */
   const mesApi = activeMonth ? monthLabelToApiMonth(activeMonth) : null;
   const { data: serieProfes } = useLiveData<PayoutsSummary>(
-    "/api/profesores/summary",
-    60_000
+    "/api/profesores/summary", POLL_DRC_GESTION
   );
   const mesEnProfesores =
     mesApi !== null &&
@@ -264,8 +267,7 @@ export default function ResumenPage() {
 
   // Con url null, useLiveData no pide nada (ni la primera vez ni en el polling).
   const { data: profesRaw } = useLiveData<PayoutsMonth>(
-    mesEnProfesores ? `/api/profesores?month=${mesApi}` : null,
-    60_000
+    mesEnProfesores ? `/api/profesores?month=${mesApi}` : null, POLL_DRC_GESTION
   );
 
   /**
@@ -329,7 +331,7 @@ export default function ResumenPage() {
     data: susc,
     loading: suscLoading,
     error: suscError,
-  } = useLiveData<SubscriptionsSnapshot>("/api/subscriptions", 60_000);
+  } = useLiveData<SubscriptionsSnapshot>("/api/subscriptions", POLL_DRC_GESTION);
 
   /**
    * Woo caído. El otro lado NO descarta la respuesta entera por esto: lo que
@@ -552,7 +554,7 @@ export default function ResumenPage() {
    * El corte lo pone el último día CON FILA en la hoja, no el reloj: ver
    * tramoTranscurrido() en kpiDiarioHelpers.
    */
-  const diario = useLiveData<DailyKpiData>("/api/kpi-diario", 60_000);
+  const diario = useLiveData<DailyKpiData>("/api/kpi-diario", POLL_SHEETS_DIARIO);
   const kpiDiario = diario.data ?? EMPTY_DAILY_KPI;
 
   const tramoActual = tramoTranscurrido(kpiDiario.days);

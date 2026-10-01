@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useLiveData } from "@/hooks/useLiveData";
+import {
+  useLiveData,
+  POLL_SHEETS,
+} from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { KpiCard } from "@/components/ui/KpiCard";
@@ -95,8 +98,7 @@ function inicioDelAnio(months: string[]): string {
 
 export default function FinancieraPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
-    "/api/kpi",
-    60_000
+    "/api/kpi", POLL_SHEETS
   );
   const [filter, setFilter] = useState<DateFilter>(DEFAULT_FILTER);
 

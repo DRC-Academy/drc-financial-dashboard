@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useLiveData } from "@/hooks/useLiveData";
+import {
+  useLiveData,
+  POLL_SHEETS,
+} from "@/hooks/useLiveData";
 import { useMesActivo } from "@/hooks/useMesActivo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
@@ -39,8 +42,7 @@ const MIX_TOP_N = 3;
 
 export default function ProductoPage() {
   const { data, loading, error, fetchedAt } = useLiveData<ProductoKpiData>(
-    "/api/producto-kpi",
-    60_000
+    "/api/producto-kpi", POLL_SHEETS
   );
 
   const kpi = data ?? EMPTY_PRODUCTO_KPI;

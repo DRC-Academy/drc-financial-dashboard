@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useLiveData } from "@/hooks/useLiveData";
+import {
+  useLiveData,
+  POLL_SHEETS,
+} from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { WeekSelect } from "@/components/ui/WeekSelect";
@@ -73,8 +76,7 @@ const C = {
 
 export default function CaptacionSemanalPage() {
   const { data, loading, error, fetchedAt } = useLiveData<WeeklyKpiData>(
-    "/api/kpi-semanal",
-    60_000
+    "/api/kpi-semanal", POLL_SHEETS
   );
 
   const weekly = data ?? { weeks: [], keys: [], data: {} };

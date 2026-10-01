@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useLiveData } from "@/hooks/useLiveData";
+import {
+  useLiveData,
+  POLL_DRC_GESTION,
+} from "@/hooks/useLiveData";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Panel } from "@/components/ui/Panel";
@@ -65,16 +68,14 @@ export default function ProfesoresPage() {
     loading: mesLoading,
     error: mesError,
   } = useLiveData<PayoutsMonth>(
-    mesElegido ? `/api/profesores?month=${mesElegido}` : "/api/profesores",
-    60_000
+    mesElegido ? `/api/profesores?month=${mesElegido}` : "/api/profesores", POLL_DRC_GESTION
   );
 
   // La serie va sin parámetros: el rango por defecto (los últimos 12 meses hasta
   // el mes en curso) lo decide el servidor. De acá salen el gráfico Y la lista
   // de meses del desplegable.
   const { data: serie } = useLiveData<PayoutsSummary>(
-    "/api/profesores/summary",
-    60_000
+    "/api/profesores/summary", POLL_DRC_GESTION
   );
 
   const [rango, setRango] = useState(0);

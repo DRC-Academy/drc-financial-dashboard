@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useLiveData } from "@/hooks/useLiveData";
+import {
+  useLiveData,
+  POLL_SHEETS,
+} from "@/hooks/useLiveData";
 import { useMesActivo } from "@/hooks/useMesActivo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
@@ -59,15 +62,13 @@ function formatRatio(value: MetricValue): string {
 
 export default function RetencionPage() {
   const { data, loading, error, fetchedAt } = useLiveData<DBKpiData>(
-    "/api/kpi",
-    60_000
+    "/api/kpi", POLL_SHEETS
   );
-  const cohortes = useLiveData<CohortData>("/api/cohortes?tipo=clientes", 60_000);
+  const cohortes = useLiveData<CohortData>("/api/cohortes?tipo=clientes", POLL_SHEETS);
   const cancelaciones = useLiveData<CancelacionRow[]>(
-    "/api/relaciones?tipo=cancelaciones",
-    60_000
+    "/api/relaciones?tipo=cancelaciones", POLL_SHEETS
   );
-  const cupones = useLiveData<CuponRow[]>("/api/relaciones?tipo=cupones", 60_000);
+  const cupones = useLiveData<CuponRow[]>("/api/relaciones?tipo=cupones", POLL_SHEETS);
 
   const kpi = data ?? { months: [], keys: [], data: {} };
   const months = kpi.months;
