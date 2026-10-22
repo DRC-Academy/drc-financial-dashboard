@@ -44,7 +44,7 @@ const handler = createMcpHandler(
       {
         title: "KPIs del negocio (DRC Academy)",
         description: [
-          "Devuelve los KPIs consolidados de DRC Academy para un mes: adquisición (CAC y CPL blended y por canal, close rate global y por comercial, gasto en ads), recurrente (MRR, churn de clientes y de MRR, LTV, ARPC, permanencia media), ingresos netos del mes con su variación mes a mes, y el recuento en vivo de alumnos activos.",
+          "Devuelve los KPIs consolidados de DRC Academy para un mes: adquisición (CAC blended y de pago, CAC de pago de Google y de Meta, CPL blended y por canal, close rate global y por comercial, gasto en ads), recurrente (MRR, churn de clientes y de MRR, LTV, ARPC, permanencia media), ingresos netos del mes con su variación mes a mes, y el recuento en vivo de alumnos activos.",
           "",
           "Solo lectura y SOLO CIFRAS AGREGADAS de toda la academia. No expone datos personales, ni detalle por alumno, ni datos por profesor (facturación o margen individual quedan fuera de este servidor).",
           "",

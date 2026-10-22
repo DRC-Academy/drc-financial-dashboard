@@ -61,8 +61,13 @@ function num(kpi: DBKpiData, key: string, month: string): number | null {
 
 /** Bloque de adquisición: qué cuesta traer un cliente y por dónde entra. */
 export interface KpisAdquisicion {
+  /** Gasto de captación / TODAS las ventas nuevas (orgánicas, referidos y ex-alumnos incluidos). */
   cac_blended: number | null;
+  /** Gasto de captación / ventas de pago de Google y Meta. Es el que se compara con la línea de rentabilidad. */
+  cac_pago: number | null;
+  /** Solo pago: gasto de Google (con Marca) / ventas de pago de Google. */
   cac_google: number | null;
+  /** Solo pago: gasto de captación de Meta / ventas de pago de Meta. */
   cac_meta: number | null;
   /** Siempre null: DB_KPI no tiene coste por el canal "otros". Ver `notas`. */
   cac_otros: number | null;
@@ -205,10 +210,14 @@ export async function buildKpisNegocio(
     );
   }
 
+  // "CAC" y "CAC_meta" ya no existen en DB_KPI: en el Sheet pasaron a CAC_blended / CAC_paid y
+  // CAC_paid_meta / CAC_blended_meta, y leer la clave vieja devolvía null siempre (22/10/2026).
+  // Google y Meta van los dos en base pago, la misma que el EOW.
   const adquisicion: KpisAdquisicion = {
-    cac_blended: num(kpi, "CAC", mesEfectivo),
+    cac_blended: num(kpi, "CAC_blended", mesEfectivo),
+    cac_pago: num(kpi, "CAC_paid", mesEfectivo),
     cac_google: num(kpi, "CAC_google", mesEfectivo),
-    cac_meta: num(kpi, "CAC_meta", mesEfectivo),
+    cac_meta: num(kpi, "CAC_paid_meta", mesEfectivo),
     cac_otros: null,
     cpl_blended: num(kpi, "CPL_ads", mesEfectivo),
     cpl_google: num(kpi, "CPL_google", mesEfectivo),
@@ -267,13 +276,16 @@ export async function buildKpisNegocio(
       "El bloque `alumnos_ahora` es una foto del presente y no responde al parámetro `mes`.",
     ],
     fuentes: {
-      cac_blended: "DB_KPI!CAC (la misma columna que muestran las tarjetas del dashboard; existe además una columna CAC_blended que NO se usa acá y da otro número)",
+      cac_blended: "DB_KPI!CAC_blended: gasto de captación (Google + Meta) / todas las ventas nuevas, orgánicas, referidos y ex-alumnos incluidos. Sale más bajo que el de pago",
+      cac_pago: "DB_KPI!CAC_paid: gasto de captación / ventas de pago de Google y Meta",
+      cac_google: "DB_KPI!CAC_google: solo pago, gasto de Google (con la campaña de Marca) / ventas de pago de Google; las ventas que entran por la búsqueda de marca no cuentan como Google",
+      cac_meta: "DB_KPI!CAC_paid_meta: solo pago, gasto de captación de Meta / ventas de pago de Meta (existe también CAC_blended_meta, con las orgánicas, que acá no se usa)",
       gasto_ads_meta: "DB_KPI!ads_meta_captac (la que usa la página de Captación, no ads_meta)",
       gasto_ads_total: "DB_KPI!ads_captacion (la que usa la página de Captación, no ads_total)",
       cac_otros: "No existe: DB_KPI no tiene coste de adquisición para el canal 'otros'. Por eso es null y no un número calculado.",
       cpl_otros: "No existe: mismo motivo que cac_otros.",
       alumnos_ahora: "GET /api/external/subscriptions de DRC Gestión (recuento agregado). No se leen datos por profesor ni por alumno.",
-      resto: "DB_KPI, columna homónima del campo (MRR, LTV, ARPC, permanencia, ingresos_netos, clientes_churn, MRR_churn, CPL_ads, CR_clientes, CR_hugo, CR_martin, CAC_google, CAC_meta, CPL_google, CPL_meta, ads_google).",
+      resto: "DB_KPI, columna homónima del campo (MRR, LTV, ARPC, permanencia, ingresos_netos, clientes_churn, MRR_churn, CPL_ads, CR_clientes, CR_hugo, CR_martin, CPL_google, CPL_meta, ads_google).",
     },
     avisos,
   };
