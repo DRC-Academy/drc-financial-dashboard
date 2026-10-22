@@ -120,7 +120,8 @@ export default function RetencionPage() {
   // ---- Gráfico C6 · churn (clientes y MRR, ambos como %) ----
   const churnRows = applyRange(months, churnRange).map((month) => ({
     month,
-    clientes_churn: kpi.data[month]?.["clientes_churn"] ?? null,
+    // DB_KPI no tiene clientes_churn: el churn de clientes es churn_susccripciones (22/10/2026).
+    clientes_churn: kpi.data[month]?.["churn_susccripciones"] ?? null,
     MRR_churn: kpi.data[month]?.["MRR_churn"] ?? null,
   }));
 

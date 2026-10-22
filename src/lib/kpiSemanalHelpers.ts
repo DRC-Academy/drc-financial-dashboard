@@ -27,6 +27,8 @@ import type { DBKpiData, MetricValue, WeeklyKpiData } from "@/types/kpi";
 export const SEM = {
   cplTotal: "CPL_total",
   cacTotal: "CAC_total",
+  // KPI Semanal no tiene CAC_meta: el de Meta es CAC_paid_meta, solo pago como CAC_google (22/10/2026).
+  cacMeta: "CAC_paid_meta",
   crTotal: "CR_total",
   adsMetaCapt: "ads_meta_capt",
   aovNuevos: "ARPNC",

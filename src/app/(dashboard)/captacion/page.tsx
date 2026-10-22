@@ -169,14 +169,15 @@ export default function CaptacionPage() {
       )
     ),
     CAC_google: kpi.data[month]?.["CAC_google"] ?? null,
-    CAC_meta: kpi.data[month]?.["CAC_meta"] ?? null,
+    // CAC_meta ya no existe en DB_KPI: el de Meta es CAC_paid_meta, solo pago como CAC_google (22/10/2026).
+    CAC_meta: kpi.data[month]?.["CAC_paid_meta"] ?? null,
   }));
 
   const mixRows = applyRange(months, mixRange).map((month) => ({
     month,
     LTV: kpi.data[month]?.["LTV"] ?? null,
     AOV_nuevos: kpi.data[month]?.["AOV_nuevos"] ?? null,
-    CAC: kpi.data[month]?.["CAC"] ?? null,
+    CAC: kpi.data[month]?.["CAC_paid"] ?? null,
     CPL_ads: kpi.data[month]?.["CPL_ads"] ?? null,
   }));
 
@@ -358,8 +359,8 @@ export default function CaptacionPage() {
                 { label: "Ventas", value: formatNumber(getValueAtMonth(kpi, "ventas_meta", activeMonth)) },
                 {
                   label: "CAC",
-                  value: formatCurrency(getValueAtMonth(kpi, "CAC_meta", activeMonth)),
-                  alerta: getAlertaOperativa("CAC", getValueAtMonth(kpi, "CAC_meta", activeMonth)),
+                  value: formatCurrency(getValueAtMonth(kpi, "CAC_paid_meta", activeMonth)),
+                  alerta: getAlertaOperativa("CAC", getValueAtMonth(kpi, "CAC_paid_meta", activeMonth)),
                 },
                 {
                   label: "CR",
@@ -483,7 +484,7 @@ export default function CaptacionPage() {
                    CPL son categorías (no gasto bruto): verde y oro. */
                 { key: "LTV", label: "LTV", color: INGRESO.fuerte },
                 { key: "AOV_nuevos", label: "AOV nuevos", color: INGRESO.base },
-                { key: "CAC", label: "CAC", color: CAT.verde },
+                { key: "CAC", label: "CAC de pago", color: CAT.verde },
                 { key: "CPL_ads", label: "CPL ads", color: CAT.oro },
               ]}
               valueFormatter={(v) => formatCurrency(v)}

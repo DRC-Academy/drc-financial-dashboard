@@ -236,7 +236,8 @@ export async function buildKpisNegocio(
 
   const recurrente: KpisRecurrente = {
     mrr: num(kpi, "MRR", mesEfectivo),
-    churn_clientes_pct: toPct(getValueAtMonth(kpi, "clientes_churn", mesEfectivo)),
+    // DB_KPI no tiene clientes_churn: es churn_susccripciones, misma base que MRR_churn (22/10/2026).
+    churn_clientes_pct: toPct(getValueAtMonth(kpi, "churn_susccripciones", mesEfectivo)),
     churn_mrr_pct: toPct(getValueAtMonth(kpi, "MRR_churn", mesEfectivo)),
     ltv: num(kpi, "LTV", mesEfectivo),
     arpc: num(kpi, "ARPC", mesEfectivo),
@@ -282,10 +283,11 @@ export async function buildKpisNegocio(
       cac_meta: "DB_KPI!CAC_paid_meta: solo pago, gasto de captación de Meta / ventas de pago de Meta (existe también CAC_blended_meta, con las orgánicas, que acá no se usa)",
       gasto_ads_meta: "DB_KPI!ads_meta_captac (la que usa la página de Captación, no ads_meta)",
       gasto_ads_total: "DB_KPI!ads_captacion (la que usa la página de Captación, no ads_total)",
+      churn_clientes_pct: "DB_KPI!churn_susccripciones: suscripciones que pasan a pending-cancel en el mes / suscripciones activas del mes anterior (misma base que churn_mrr_pct)",
       cac_otros: "No existe: DB_KPI no tiene coste de adquisición para el canal 'otros'. Por eso es null y no un número calculado.",
       cpl_otros: "No existe: mismo motivo que cac_otros.",
       alumnos_ahora: "GET /api/external/subscriptions de DRC Gestión (recuento agregado). No se leen datos por profesor ni por alumno.",
-      resto: "DB_KPI, columna homónima del campo (MRR, LTV, ARPC, permanencia, ingresos_netos, clientes_churn, MRR_churn, CPL_ads, CR_clientes, CR_hugo, CR_martin, CPL_google, CPL_meta, ads_google).",
+      resto: "DB_KPI, columna homónima del campo (MRR, LTV, ARPC, permanencia, ingresos_netos, MRR_churn, CPL_ads, CR_clientes, CR_hugo, CR_martin, CPL_google, CPL_meta, ads_google).",
     },
     avisos,
   };

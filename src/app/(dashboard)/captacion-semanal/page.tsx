@@ -158,7 +158,7 @@ export default function CaptacionSemanalPage() {
       )
     ),
     CAC_google: kpi.data[week]?.["CAC_google"] ?? null,
-    CAC_meta: kpi.data[week]?.["CAC_meta"] ?? null,
+    CAC_meta: kpi.data[week]?.[SEM.cacMeta] ?? null,
   }));
 
   const mixRows = applyRange(weeks, mixRange).map((week) => ({
@@ -314,8 +314,8 @@ export default function CaptacionSemanalPage() {
                 { label: "Ventas", value: formatNumber(getValueAtMonth(kpi, "ventas_meta", activeWeek)) },
                 {
                   label: "CAC",
-                  value: formatCurrency(getValueAtMonth(kpi, "CAC_meta", activeWeek)),
-                  alerta: getAlertaOperativa("CAC", getValueAtMonth(kpi, "CAC_meta", activeWeek)),
+                  value: formatCurrency(getValueAtMonth(kpi, SEM.cacMeta, activeWeek)),
+                  alerta: getAlertaOperativa("CAC", getValueAtMonth(kpi, SEM.cacMeta, activeWeek)),
                 },
                 {
                   label: "CR",
@@ -442,7 +442,7 @@ export default function CaptacionSemanalPage() {
                 /* Mismo criterio de color que Captación mensual: el ticket es
                    dinero que ENTRA (azul); CAC y CPL son categorías. */
                 { key: "AOV_nuevos", label: "ARPNC", color: INGRESO.base },
-                { key: "CAC", label: "CAC", color: CAT.verde },
+                { key: "CAC", label: "CAC blended", color: CAT.verde },
                 { key: "CPL_ads", label: "CPL total", color: CAT.oro },
               ]}
               valueFormatter={(v) => formatCurrency(v)}

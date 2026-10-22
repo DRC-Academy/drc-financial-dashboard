@@ -122,8 +122,9 @@ const COLUMNAS_DB_KPI = [
   "%margenbruto",
   "AOV",
   "ARPC",
-  "CAC",
+  "CAC_blended",
   "CAC_obj",
+  "CAC_paid",
   "CF_ingresos",
   "CPL_ads",
   "CPL_obj",
@@ -136,9 +137,8 @@ const COLUMNAS_DB_KPI = [
   "MRR_MoM",
   "MRR_net",
   "churn_obj",
-  "clientes_churn",
+  "churn_susccripciones",
   "clientes_nuevos",
-  "clientes_perdidos",
   "clientes_recurrentes",
   "ingresos_B2B",
   "ingresos_B2C_netos",
@@ -149,6 +149,7 @@ const COLUMNAS_DB_KPI = [
   "pedidos_recurrentes",
   "retention_rate",
   "suscripciones_activas",
+  "suscripciones_perdidas",
   "ventas",
 ];
 
@@ -452,7 +453,9 @@ export default function ResumenPage() {
     "suscripciones_activas",
     activeMonth
   );
-  const churn = getValueAtMonth(kpi, "clientes_churn", activeMonth);
+  // DB_KPI no tiene clientes_churn: el churn de clientes es churn_susccripciones (suscripciones que pasan a
+  // pending-cancel en el mes / activas del mes anterior), la misma base que MRR_churn (22/10/2026).
+  const churn = getValueAtMonth(kpi, "churn_susccripciones", activeMonth);
   const churnObj = getValueAtMonth(kpi, "churn_obj", activeMonth);
 
   // ---- Fila 4 ----
@@ -461,7 +464,10 @@ export default function ResumenPage() {
   const ltvObj = getValueAtMonth(kpi, "LTV_obj", activeMonth);
   const cpl = getValueAtMonth(kpi, "CPL_ads", activeMonth);
   const cplObj = getValueAtMonth(kpi, "CPL_obj", activeMonth);
-  const cac = getValueAtMonth(kpi, "CAC", activeMonth);
+  // "CAC" ya no existe en DB_KPI (22/10/2026). La tarjeta muestra el CAC de pago (CAC_paid: gasto de captación /
+  // ventas de pago de Google y Meta), que es el que se compara con el máximo; el blended va debajo.
+  const cac = getValueAtMonth(kpi, "CAC_paid", activeMonth);
+  const cacBlended = getValueAtMonth(kpi, "CAC_blended", activeMonth);
   const cacObj = getValueAtMonth(kpi, "CAC_obj", activeMonth);
   const cr = getValueAtMonth(kpi, "CR_clientes", activeMonth);
   // CR sí tiene columna de objetivo en DB_KPI (CR_obj = 0,28), y coincide con
@@ -502,7 +508,8 @@ export default function ResumenPage() {
   }));
 
   const clientesRows = applyRange(months, cliRange).map((month) => {
-    const perdidos = kpi.data[month]?.["clientes_perdidos"] ?? null;
+    // clientes_perdidos no existe en DB_KPI: son las suscripciones perdidas del mes (22/10/2026).
+    const perdidos = kpi.data[month]?.["suscripciones_perdidas"] ?? null;
     return {
       month,
       clientes_nuevos: kpi.data[month]?.["clientes_nuevos"] ?? null,
@@ -962,7 +969,7 @@ export default function ResumenPage() {
               className="lg:col-span-2"
               label="Clientes en churn"
               value={formatPercent(churn)}
-              mom={getMoMAtMonth(kpi, "clientes_churn", activeMonth)}
+              mom={getMoMAtMonth(kpi, "churn_susccripciones", activeMonth)}
               momIsGoodWhenPositive={false}
               alerta={getAlertaOperativa("clientes_churn", churn)}
               hint={
@@ -1023,9 +1030,10 @@ export default function ResumenPage() {
               }
             />
             <KpiCard
-              label="CAC"
+              label="CAC de pago"
               value={formatCurrency(cac)}
-              mom={getMoMAtMonth(kpi, "CAC", activeMonth)}
+              mom={getMoMAtMonth(kpi, "CAC_paid", activeMonth)}
+              subValues={[{ label: "CAC blended", value: formatCurrency(cacBlended) }]}
               momIsGoodWhenPositive={false}
               alerta={getAlertaOperativa("CAC", cac)}
               hint={
